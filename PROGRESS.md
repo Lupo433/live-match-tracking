@@ -1,28 +1,37 @@
 # Stato di avanzamento
 
-## Tappa 1 — Scaffold ✅
-- pyproject, schema dati, interfaccia `DataSource`, sorgente sintetica, CI (ruff + pytest), CLAUDE.md.
+Ultimo aggiornamento: 4 novembre 2026, notte (sessione autonoma).
 
-## Tappa 2 — Dati Metrica ✅
-- `scripts/download_data.py` (git clone shallow), loader `sources/metrica.py`, catalogo partite, campione in `data/sample/`.
-- Documentazione del formato in `docs/data_format.md`.
+## Cosa funziona (verificato)
+- **Tappa 1 — Scaffold** ✅ pyproject, schema dati, interfaccia `DataSource`, sorgente sintetica, CI (ruff + pytest), CLAUDE.md.
+- **Tappa 2 — Dati Metrica** ✅ download (`scripts/download_data.py`), loader con conversione in metri e verso d'attacco
+  normalizzato, catalogo partite, campione committato (`data/sample/`, 60 s per tempo del Game 1), `docs/data_format.md`.
+- **Tappa 3 — Replay live + WebSocket + canvas** ✅ (primo traguardo) replay 0.5–10× con pausa/seek, WebSocket a 25 msg/s,
+  pagina canvas con pallini, numeri di maglia, scia della palla.
+- **Tappa 4 — Metriche incrementali** ✅ distanza, velocità (Savitzky-Golay), velocità max, sprint e HI, heatmap, possesso,
+  forma di squadra, pitch control, velocità palla, contatori eventi; checkpoint condivisi in background per seek istantanei.
+- **Tappa 5 — Rifinitura** ✅ heatmap del giocatore selezionato, timeline eventi cliccabile, overlay pitch control e forma di
+  squadra, feed eventi in italiano con orologio "da TV", banner al gol, layout responsive (verificato a 390 px di larghezza).
+- **Tappa 6 — Documentazione** ✅ README, DECISIONS, ROADMAP, questo file; screenshot in `docs/screenshot.png`.
 
-## Tappa 3 — Replay live + WebSocket + canvas ✅ (primo traguardo)
-- `replay.py` (ReplayClock: play/pausa/seek/velocità 0.5–10×, orologio iniettabile per i test).
-- `session.py` (sessione per client), `api.py` (REST + WebSocket a ~25 messaggi/s), `python -m livematch`.
-- Pagina canvas: campo regolamentare, pallini con numero di maglia, scia della palla, controlli e timeline cliccabile.
-- Verificato con test WebSocket (i frame avanzano e le posizioni cambiano) e con screenshot headless (Playwright).
+Numeri misurati:
+- 57 test verdi; ruff pulito; CI GitHub Actions verde.
+- Motore di metriche: ~250 µs per frame (28 giocatori) ⇒ una partita intera in ~35 s.
+- Game 2 completo a 10× via WebSocket: 25 messaggi/s (intervallo medio 40.1 ms, p99 74 ms con il pre-calcolo in
+  background attivo), 2 496 frame avanzati in 10 s su 2 503 attesi, metriche sempre sincronizzate, messaggi ~1 KB (max ~4 KB).
 
-## Tappa 4 — Motore di metriche incrementale ✅
-- `metrics/`: cinematica (distanza, velocità Savitzky-Golay, velocità max), sprint e alta intensità, heatmap, possesso,
-  forma di squadra, pitch control, velocità palla, contatori eventi. Tutto aggiornato frame per frame.
-- Collegato al WebSocket (statistiche a ~5 Hz) e al pannello statistiche.
-- Seek istantaneo: checkpoint dello stato delle metriche ogni minuto, calcolati una volta per partita in un thread
-  in background (`CheckpointStore`) e condivisi tra le sessioni; il recupero dei frame mancanti avviene con un budget
-  di tempo per tick, quindi il WebSocket non si blocca mai.
-- Misurato sul Game 2 completo a 10×: 25 messaggi/s (intervallo medio 40.1 ms), 2 496 frame avanzati in 10 s su 2 503 attesi,
-  metriche sempre sincronizzate (nessun frame perso), messaggi ~1 KB (fino a ~4 KB con griglia pitch control e tabella).
+## Cosa manca / limiti
+- Lo stub del feed live è documentato e testato come buffer, ma non c'è un client per un provider reale (non c'era un feed a disposizione).
+- Il pre-calcolo dei checkpoint di una partita completa dura ~35 s alla prima apertura: in quel lasso un seek lontano
+  mostra "Sincronizzo statistiche…" per qualche secondo.
+- Vedi "Limiti noti" nel README.
 
-## Tappa 5 — Heatmap, timeline, pitch control, grafica ✅ (prima versione)
-- Heatmap del giocatore selezionato (click sul campo o sulla tabella), timeline con tiri/gol/cartellini cliccabile,
-  overlay pitch control e forma di squadra (inviluppo convesso, baricentro, linea difensiva), feed eventi in italiano.
+## Cosa fare per primo domattina
+1. `git pull`, poi seguire "Avvio rapido" nel README (5 comandi) e aprire http://127.0.0.1:8000.
+2. Provare: velocità 10×, click sulla timeline vicino a un gol (⚽), click su un giocatore per la heatmap, overlay "Pitch control".
+3. Controllare che i testi del README rappresentino bene il progetto per il portfolio (nome, descrizione, screenshot).
+
+## Prossimi passi consigliati
+1. Persistere checkpoint e dati convertiti su disco per avvio istantaneo.
+2. Dockerfile + deploy di una demo pubblica sul campione.
+3. xT / xG (vedi ROADMAP.md) e un report post-partita.
