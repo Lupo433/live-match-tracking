@@ -15,7 +15,7 @@ from typing import Any, Protocol
 
 import numpy as np
 
-from livematch.replay import ReplayClock
+from livematch.replay import LiveClock, ReplayClock
 from livematch.schema import Event, Frame, Player, match_clock
 from livematch.sources.base import DataSource
 
@@ -164,7 +164,13 @@ class MatchSession:
     ) -> None:
         self.source = source
         self.info = source.info
-        self.replay = ReplayClock(self.info.n_frames, self.info.fps, clock=clock)
+        self.is_live = source.info.source == "live"
+        self.replay: ReplayClock | LiveClock
+        if self.is_live:
+            self.replay = LiveClock(lambda: len(source), self.info.fps, clock=clock)
+        else:
+            self.replay = ReplayClock(self.info.n_frames, self.info.fps, clock=clock)
+        self._events_sent = len(source.events)
         self._engine_factory = engine_factory
         self.engine: Engine | None = engine_factory(source) if engine_factory else None
         self.cursor = 0  # next frame the metrics engine has to consume
@@ -172,9 +178,18 @@ class MatchSession:
         self.store = store
         self._ticks = 0
         self.selected: int | None = None  # player whose heatmap is streamed
-        self._period_start_ts = {
-            p: float(source.frame(i).timestamp) for p, i in self.info.period_starts.items()
-        }
+        self._period_start_ts: dict[int, float] = {}
+        self._refresh_periods()
+
+    def _refresh_periods(self) -> None:
+        for p, i in self.source.info.period_starts.items():
+            if p not in self._period_start_ts:
+                # a live feed may be joined mid-half: provider timestamps count from
+                # kick-off, so the first half always starts at t = 0
+                live_first_half = self.is_live and p == 1
+                self._period_start_ts[p] = (
+                    0.0 if live_first_half else float(self.source.frame(i).timestamp)
+                )
 
     # ------------------------------------------------------------------ commands
     def handle(self, msg: dict[str, Any]) -> None:
@@ -184,6 +199,9 @@ class MatchSession:
             self.replay.play()
         elif cmd == "pause":
             self.replay.pause()
+        elif cmd == "go_live":
+            if isinstance(self.replay, LiveClock):
+                self.replay.go_live()
         elif cmd == "toggle":
             (self.replay.pause if self.replay.playing else self.replay.play)()
         elif cmd == "select_player":
@@ -197,7 +215,7 @@ class MatchSession:
             elif "minute" in msg:
                 target = int(float(msg["minute"]) * 60 * self.info.fps)
             elif "fraction" in msg:
-                target = int(float(msg["fraction"]) * (self.info.n_frames - 1))
+                target = int(float(msg["fraction"]) * (len(self.source) - 1))
             else:
                 raise ValueError("seek needs frame, minute or fraction")
             self.seek(target)
@@ -205,8 +223,9 @@ class MatchSession:
             raise ValueError(f"unknown command: {cmd!r}")
 
     def seek(self, frame: int) -> None:
-        frame = min(max(frame, 0), self.info.n_frames - 1)
+        frame = min(max(frame, 0), len(self.source) - 1)
         self.replay.seek(frame)
+        frame = self.replay.frame_index()
         if self.engine is None:
             return
         # closest known state at or before the target (own or shared checkpoints)
@@ -229,13 +248,16 @@ class MatchSession:
 
     # ------------------------------------------------------------------ messages
     def init_message(self, matches: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+        events = list(self.source.events)
+        self._events_sent = len(events)
         return {
             "type": "init",
-            "match": self.info.to_dict(),
+            "match": self.source.info.to_dict(),
             "players": [player_dict(p) for p in self.source.players],
-            "events": [event_dict(e) for e in self.source.events],
+            "events": [event_dict(e) for e in events],
             "matches": matches or [],
             "speeds": [0.5, 1, 2, 5, 10],
+            "live": self.is_live,
         }
 
     def advance_metrics(self, target: int, budget_s: float = 0.025) -> None:
@@ -263,8 +285,13 @@ class MatchSession:
     def tick(self, budget_s: float = 0.025, force_stats: bool = False) -> dict[str, Any]:
         """Advance metrics to the replay position and build the frame message."""
         idx = self.replay.frame_index()
+        if len(self.source) == 0:
+            return {"type": "waiting"}
+        idx = min(idx, len(self.source) - 1)
         self.advance_metrics(idx, budget_s)
         frame = self.source.frame(idx)
+        if frame.period not in self._period_start_ts:
+            self._refresh_periods()
         self._ticks += 1
         ball = frame.ball
         msg: dict[str, Any] = {
@@ -280,7 +307,16 @@ class MatchSession:
             "playing": self.replay.playing,
             "speed": self.replay.speed,
             "sync": round(min(1.0, self.cursor / (idx + 1)), 3),
+            "n": len(self.source),
         }
+        if isinstance(self.replay, LiveClock):
+            msg["live"] = True
+            msg["at_edge"] = self.replay.is_live
+            msg["lag"] = round(self.replay.lag_frames() / self.info.fps, 1)
+            events = self.source.events
+            if len(events) > self._events_sent:
+                msg["ev"] = [event_dict(e) for e in events[self._events_sent :]]
+                self._events_sent = len(events)
         if self.engine is not None and (force_stats or self._ticks % STATS_EVERY_TICKS == 1):
             msg["st"] = self.engine.snapshot()
             heatmap = getattr(self.engine, "heatmap", None)

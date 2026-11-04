@@ -96,3 +96,118 @@ class ReplayClock:
             raise ValueError(f"speed must be one of {ALLOWED_SPEEDS}")
         self._rebase()
         self._speed = speed
+
+
+class LiveClock:
+    """Clock for a growing live source: follows the live edge, with DVR.
+
+    * Live mode (default): ``position() = available - 1 - delay_frames``.
+    * DVR mode (after a pause or a backwards seek): behaves like
+      :class:`ReplayClock`, but can never overtake the live edge; when it
+      catches up it snaps back to live mode.
+    """
+
+    def __init__(
+        self,
+        available: Callable[[], int],
+        fps: float,
+        clock: Callable[[], float] = time.monotonic,
+        delay_frames: int = 0,
+    ) -> None:
+        self._available = available
+        self.fps = fps
+        self._clock = clock
+        self.delay_frames = delay_frames
+        self._live = True
+        self._dvr = ReplayClock(1, fps, clock=clock)
+        self._dvr_playing = True
+
+    # ---- helpers
+    @property
+    def n_frames(self) -> int:
+        return max(1, self._available())
+
+    def live_position(self) -> float:
+        return float(max(0, self._available() - 1 - self.delay_frames))
+
+    def _sync_dvr(self) -> None:
+        # the DVR clock is unbounded; we clamp to the live edge ourselves
+        self._dvr.n_frames = 10**12
+
+    # ---- ReplayClock-compatible API
+    @property
+    def is_live(self) -> bool:
+        if not self._live:
+            self._sync_dvr()
+            if self._dvr_playing and self._dvr._raw_position() >= self.live_position():
+                self._live = True  # caught up with the live edge
+        return self._live
+
+    @property
+    def playing(self) -> bool:
+        return True if self.is_live else self._dvr_playing
+
+    @property
+    def speed(self) -> float:
+        return 1.0 if self.is_live else self._dvr.speed
+
+    @property
+    def ended(self) -> bool:
+        return False
+
+    def position(self) -> float:
+        if self.is_live:
+            return self.live_position()
+        return min(self._dvr.position(), self.live_position())
+
+    def frame_index(self) -> int:
+        return int(self.position())
+
+    def lag_frames(self) -> int:
+        return int(self.live_position() - self.position())
+
+    def go_live(self) -> None:
+        self._live = True
+        self._dvr_playing = True
+
+    def _enter_dvr(self, at: float, playing: bool) -> None:
+        self._sync_dvr()
+        self._dvr.pause()
+        self._dvr.seek(at)
+        if playing:
+            self._dvr.play()
+        self._dvr_playing = playing
+        self._live = False
+
+    def play(self) -> None:
+        if not self.is_live:
+            self._sync_dvr()
+            self._dvr.play()
+            self._dvr_playing = True
+
+    def pause(self) -> None:
+        if self.is_live:
+            self._enter_dvr(self.live_position(), playing=False)
+        else:
+            self._sync_dvr()
+            self._dvr.pause()
+            self._dvr_playing = False
+
+    def seek(self, frame: float) -> None:
+        if frame >= self.live_position():
+            self.go_live()
+        else:
+            self._enter_dvr(frame, playing=self.playing)
+
+    def seek_seconds(self, seconds: float) -> None:
+        self.seek(seconds * self.fps)
+
+    def set_speed(self, speed: float) -> None:
+        if speed not in ALLOWED_SPEEDS:
+            raise ValueError(f"speed must be one of {ALLOWED_SPEEDS}")
+        if self.is_live:
+            if speed > 1.0:
+                return  # cannot go faster than live
+            self._enter_dvr(self.live_position(), playing=True)
+        self._sync_dvr()
+        self._dvr.set_speed(speed)

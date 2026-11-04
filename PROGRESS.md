@@ -13,6 +13,16 @@
 - Prestazioni a 10× sul Game 2 (rimisurate): con pre-calcolo in corso 25 msg/s (40.1 ms medi, p99 99.7 ms), 2 500 frame su
   2 509 attesi; con checkpoint già in cache 40.0 ms medi, **p99 45.2 ms**, 2 508/2 509; metriche sempre sincronizzate.
 
+### Tappa 2 — Feed live simulato end-to-end ✅
+- `livematch/live/provider.py` + `scripts/fake_provider.py`: provider WebSocket a 25 Hz con formato diverso (id opachi,
+  coordinate 0–1 "da stadio", ms), ritardo, perdita, riordino e disconnessioni.
+- `ProviderFeedSource` (in `sources/live_stub.py`): roster dal line-up, conversione in metri, verso d'attacco per tempo
+  (portieri), `JitterBuffer` con buchi → frame NaN, riconnessione, gol trattenuti fino alla linea.
+- `LiveClock` (live edge + DVR), comando `go_live`, campi `live/at_edge/lag/ev/n` nel messaggio `frame`;
+  badge LIVE/DVR e pulsante "Torna al live" nel frontend.
+- `python -m livematch --live-demo`. 9 test nuovi, incluso un end-to-end su WebSocket vero con disconnessioni ogni secondo.
+- Prestazioni a 10× sul Game 2 dopo le modifiche alla sessione: 40.0 ms medi, p99 46.8 ms, 2 509/2 509 frame, sync 1.0.
+
 ---
 
 ## Sessione 1

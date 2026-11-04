@@ -32,6 +32,13 @@ class Catalog:
         self._entries = {e.match_id: e for e in entries}
         self._cache: dict[str, DataSource] = {}
         self._lock = threading.Lock()
+        self._default: str | None = None
+
+    def add(self, entry: MatchEntry, default: bool = False) -> None:
+        """Register a match (optionally as the default one)."""
+        self._entries[entry.match_id] = entry
+        if default:
+            self._default = entry.match_id
 
     def list(self) -> list[MatchEntry]:
         return list(self._entries.values())
@@ -49,7 +56,9 @@ class Catalog:
 
     @property
     def default_id(self) -> str:
-        """Prefer a full real match, then the sample, then synthetic."""
+        """Explicit default, else a full real match, then the sample, then synthetic."""
+        if self._default is not None:
+            return self._default
         for mid in ("metrica_game_1", "metrica_game_2", "sample_game_1", "synthetic"):
             if mid in self._entries:
                 return mid

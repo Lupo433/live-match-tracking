@@ -163,3 +163,9 @@ table.players tr.off td { opacity: .45; }
 .goal-banner.away { border-color: var(--away); box-shadow: 0 0 60px rgba(60,203,244,.45); }
 .goal-banner b { display: block; font-size: 30px; letter-spacing: .12em; }
 .goal-banner span { color: var(--muted); font-size: 13px; }
+
+/* ---------- live feed */
+.live-badge { font-size: 11px; font-weight: 800; letter-spacing: .1em; padding: 4px 9px; border-radius: 6px; background: #e11d48; color: #fff; }
+.live-badge.behind { background: var(--bg2); color: var(--muted); border: 1px solid var(--line); }
+.live-badge[hidden], .golive[hidden] { display: none; }
+.golive { font-size: 12px; padding: 5px 10px; border-color: #e11d48; color: #fda4af; }

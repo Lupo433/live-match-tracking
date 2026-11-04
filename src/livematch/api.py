@@ -56,6 +56,8 @@ def create_app(
     def _store(match_id: str) -> CheckpointStore | None:
         if not precompute or engine_factory is None:
             return None
+        if catalog.get(match_id).info.source == "live":
+            return None  # a growing source cannot be pre-computed
         if match_id not in stores:
             stores[match_id] = CheckpointStore(catalog.get(match_id), engine_factory).start()
         return stores[match_id]
@@ -83,11 +85,15 @@ def create_app(
     @app.get("/api/matches/{match_id}")
     def match_metadata(match_id: str) -> dict[str, Any]:
         src = _get_source(match_id)
-        return {
+        out: dict[str, Any] = {
             "match": src.info.to_dict(),
             "players": [player_dict(p) for p in src.players],
             "n_events": len(src.events),
         }
+        status = getattr(src, "status", None)
+        if callable(status):
+            out["feed"] = status()  # live adapters: jitter-buffer / connection stats
+        return out
 
     @app.get("/api/matches/{match_id}/events")
     def match_events(match_id: str) -> list[dict[str, Any]]:

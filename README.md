@@ -109,13 +109,16 @@ src/livematch/
 ├── replay.py            # ReplayClock: tempo reale -> frame (orologio iniettabile per i test)
 ├── session.py           # MatchSession (una per client) + CheckpointStore condiviso
 ├── api.py               # FastAPI: REST + WebSocket /ws
-├── __main__.py          # python -m livematch
+├── __main__.py          # python -m livematch [--live-demo]
+├── cache.py             # cache su disco (.cache/): CSV convertiti e checkpoint
+├── goals.py             # frame del gol al passaggio della linea
+├── live/                # provider.py (fake provider), demo.py (--live-demo)
 ├── sources/
 │   ├── base.py          # DataSource (ABC): info, players, events, frame(i), frames()
 │   ├── array_source.py  # implementazione in memoria su array numpy
 │   ├── metrica.py       # loader CSV Metrica -> schema interno
 │   ├── synthetic.py     # partita sintetica plausibile (fallback e test)
-│   └── live_stub.py     # adattatore per un feed live reale (da completare col provider)
+│   └── live_stub.py     # LiveFeedSource + JitterBuffer + ProviderFeedSource (adattatore live)
 ├── metrics/
 │   ├── engine.py        # compone tutte le metriche, snapshot JSON, checkpoint/restore
 │   ├── kinematics.py    # distanza, velocità Savitzky-Golay, sprint, alta intensità
@@ -139,19 +142,20 @@ Server → client:
 
 | `type` | Contenuto |
 |---|---|
-| `init` | metadata partita, roster (`i, id, team, num, name, gk`), tutti gli eventi, partite disponibili, velocità ammesse |
-| `frame` | `f` frame, `t` secondi, `per` periodo, `clk` orologio "57:29", `pl` posizioni `[x0,y0,x1,y1,…]` allineate al roster (`null` = fuori campo), `b` palla, `playing`, `speed`, `sync` (avanzamento metriche), `st` statistiche (~5 Hz) |
+| `init` | metadata partita, roster (`i, id, team, num, name, gk`), tutti gli eventi (con `gf` = frame del gol sulla linea), partite disponibili, velocità ammesse, `live` |
+| `frame` | `f` frame, `n` frame disponibili, `t` secondi, `per` periodo, `clk` orologio "57:29", `pl` posizioni `[x0,y0,x1,y1,…]` allineate al roster (`null` = fuori campo), `b` palla, `playing`, `speed`, `sync` (avanzamento metriche), `st` statistiche (~5 Hz). Solo per sorgenti live: `live`, `at_edge` (in diretta o DVR), `lag` (secondi dietro il live), `ev` (eventi nuovi) |
 | `loading` / `error` | caricamento partita / comando non valido |
 
 Client → server: `{"cmd":"play"}`, `{"cmd":"pause"}`, `{"cmd":"seek","frame":N}` (oppure `"minute":M` o `"fraction":0..1`),
-`{"cmd":"set_speed","speed":5}`, `{"cmd":"select_match","match_id":"metrica_game_2"}`, `{"cmd":"select_player","player":i}`.
+`{"cmd":"set_speed","speed":5}`, `{"cmd":"select_match","match_id":"metrica_game_2"}`, `{"cmd":"select_player","player":i}`,
+`{"cmd":"go_live"}` (solo sorgenti live).
 
 ### Endpoint REST
 
 | Endpoint | Descrizione |
 |---|---|
 | `GET /api/matches` | partite disponibili e partita di default |
-| `GET /api/matches/{id}` | metadata e roster |
+| `GET /api/matches/{id}` | metadata e roster (per la partita live anche `feed`: pacchetti ricevuti, fuori ordine, persi, riconnessioni) |
 | `GET /api/matches/{id}/events` | eventi (coordinate in metri, casa sempre verso destra) |
 | `GET /api/matches/{id}/summary` | statistiche finali dell'intera partita |
 | `GET /api/health` | stato del servizio |
@@ -177,26 +181,52 @@ Coordinate in metri, campo 105 × 68, origine in basso a sinistra; **la squadra 
 | **Velocità palla** | Savitzky-Golay (finestra 5, grado 1) sulla posizione della palla, max 45 m/s. |
 | **Eventi** | Gol (`SHOT` con sottotipo `…GOAL`), tiri e tiri in porta, passaggi, falli commessi (da `FAULT RECEIVED` dell'avversario), cartellini, calci d'angolo: contati quando il replay supera il frame dell'evento. |
 
-## Come collegare un feed live reale
+## Feed live simulato e come collegare un feed reale
 
-Tutto il sistema dipende solo da `DataSource` (`sources/base.py`): `info`, `players`, `events`, `frame(i)`.
-Lo scheletro `sources/live_stub.py` (`LiveFeedSource`) implementa già un buffer thread-safe che cresce frame dopo frame
-ed è compatibile con il motore di metriche (c'è un test che lo alimenta e confronta i risultati con la sorgente originale).
-Per collegare un provider:
+```bash
+python -m livematch --live-demo
+```
 
-1. **`connect()`**: apri la connessione (WebSocket/TCP/HTTP streaming) leggendo le credenziali da variabili d'ambiente,
-   e in un task/thread di lettura chiama `ingest(messaggio)` per ogni pacchetto.
-2. **`parse_message()`**: traduci il formato del provider nello schema interno: mappa gli id giocatore sul roster costruito
-   dalle formazioni (indici stabili per tutta la partita), converti le coordinate in metri (105 × 68, origine in basso a
-   sinistra), normalizza il verso d'attacco a inizio di ogni periodo (casa verso x = 105), NaN per dati mancanti,
-   `frame_id` contigui da 0.
-3. **Jitter buffer**: riordina i pacchetti in ritardo o fuori ordine prima di `push_frame`.
-4. **Registra la sorgente nel catalogo** (`catalog.py`) con un `MatchEntry`.
-5. **"Live edge"**: per una partita in corso il client deve seguire l'ultimo frame disponibile a 1×; basta aggiornare
-   `ReplayClock.n_frames` con `len(source)` a ogni tick (o scrivere un piccolo `LiveClock`). Il seek all'indietro (DVR)
-   funziona già grazie all'accesso casuale e ai checkpoint.
+avvia due servizi nello stesso processo:
 
-Metriche, API e frontend restano invariati.
+1. un **fake provider** (`livematch/live/provider.py`, anche standalone con `python scripts/fake_provider.py`) che
+   trasmette su `ws://127.0.0.1:8765/feed` una partita Metrica a 25 Hz **in un formato volutamente diverso** da quello
+   interno: id giocatore opachi (`pl_3f9a1c`), squadre `H`/`A`, coordinate normalizzate 0–1 con origine in alto a sinistra
+   e **orientamento "da stadio"** (le squadre cambiano lato nel secondo tempo), timestamp in millisecondi, solo i giocatori
+   in campo, palla `null` se persa. Simula ritardo (`--delay-ms`, default 150), pacchetti persi (`--drop`, 1%),
+   fuori ordine (`--reorder`, 3%) e disconnessioni periodiche (`--disconnect-every`, 90 s);
+2. l'app, con la partita **"● LIVE demo"** selezionata, alimentata dall'adattatore `ProviderFeedSource`
+   (`sources/live_stub.py`).
+
+Opzioni utili: `--start-minute 55` (entra a partita in corso), `--drop 0.05 --reorder 0.1` (rete pessima),
+`--disconnect-every 0` (rete stabile), `--provider-port`.
+
+### Cosa è dimostrato (con test)
+
+| Problema di un feed reale | Soluzione implementata |
+|---|---|
+| Formato e id del provider | `lineup` → roster con indici stabili; `parse_tracking` converte in metri; id sconosciuti contati e scartati |
+| Verso d'attacco non normalizzato | deciso al primo frame di ogni tempo dalla posizione dei due portieri (fallback: x media delle squadre); funziona anche entrando a metà tempo con la squadra di casa in attacco |
+| Pacchetti fuori ordine / persi | `JitterBuffer`: riordina per numero di sequenza, dichiara perso un pacchetto quando ne arriva uno 8 frame più recente (≤ 320 ms di latenza in più) e lo sostituisce con un frame NaN, così la timeline resta regolare e le metriche non contano distanza attraverso il buco |
+| Disconnessioni | riconnessione automatica con backoff esponenziale; i frame persi durante la disconnessione diventano NaN |
+| Gol | l'evento viene trattenuto finché la palla supera la linea (o per 5 s), poi pubblicato con `goal_frame` |
+| "Live edge" e DVR | `LiveClock`: segue l'ultimo frame a 1×; pausa o seek indietro passano in DVR (anche a 2–10×); quando il DVR raggiunge il live torna automaticamente in diretta. Nel browser: badge **● LIVE** / **DVR −00:12**, pulsante "Torna al live", eventi nuovi spinti nel messaggio `frame` |
+| Metriche incrementali | stesse metriche del replay; con 2% di pacchetti persi e 5% fuori ordine le distanze restano entro il 6% e il possesso entro 3 punti rispetto ai dati completi (test) |
+
+I test (`tests/test_live.py`) coprono jitter buffer, LiveClock, ricostruzione esatta della partita dal formato del
+provider (anche entrando a metà tempo), coerenza delle metriche con perdite e riordino e un end-to-end su WebSocket vero
+con disconnessioni ogni secondo.
+
+### Cosa resta da fare per un provider vero
+
+1. **Client del provider**: autenticazione (chiavi da variabili d'ambiente), endpoint e formato reali in `connect()` /
+   `parse_tracking()`; spesso i provider hanno coordinate centrate e in centimetri.
+2. **Formazioni e cambi** da un feed separato (qui il roster arriva una volta sola con il `lineup`).
+3. **Orologio di partita ufficiale** (recupero, intervallo) dal provider invece che dai timestamp.
+4. **Tempi supplementari e rigori**, eventi corretti/annullati dal provider (VAR).
+5. **Persistenza del flusso** (es. su disco o Kafka) per il replay dopo il fischio finale e per più spettatori.
+
+Metriche, API e frontend restano invariati: dipendono solo da `DataSource`.
 
 ## Limiti noti
 
@@ -211,7 +241,8 @@ Metriche, API e frontend restano invariati.
   dei checkpoint (il replay parte subito; solo i seek lontani mostrano per qualche secondo "Sincronizzo statistiche…").
   Entrambi vengono salvati in `.cache/`: dalla seconda volta l'apertura richiede ~1 s.
 - **Una sessione di replay per connessione**: ogni spettatore ha il proprio replay; nessuna sincronizzazione tra spettatori.
-- Lo stub live non include un client per un provider specifico.
+- Il feed live è dimostrato contro un provider simulato: non c'è un client per un provider commerciale specifico.
+- Feed live: se ci si collega a metà del **secondo** tempo l'orologio parte dal primo frame ricevuto.
 
 ## Documentazione
 

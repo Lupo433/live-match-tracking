@@ -257,7 +257,25 @@
   }
 
   // ------------------------------------------------------------------ UI updates
+  function onLive(m) {
+    const badge = $("liveBadge");
+    badge.hidden = !m.live;
+    $("goLive").hidden = !m.live || m.at_edge;
+    if (!m.live) return;
+    S.info.n_frames = m.n;
+    badge.classList.toggle("behind", !m.at_edge);
+    badge.textContent = m.at_edge ? "● LIVE" : `DVR −${fmtClock(m.lag)}`;
+    if (m.ev && m.ev.length) {
+      S.events.push(...m.ev);
+      S.events.sort((a, b) => a.f - b.f);
+      S.lastFeedIdx = null;
+    }
+    // the timeline grows with the match: rebuild markers every ~2 s or on new events
+    if ((m.ev && m.ev.length) || m.f % 50 === 0) buildTimeline();
+  }
+
   function onFrame(m) {
+    if (m.live || m.n) onLive(m);
     S.prev = S.curr; S.curr = m; S.currAt = performance.now();
     if (S.prev && Math.abs(m.f - S.prev.f) > 40) S.trail = [];
     S.trail.push(m.b);
@@ -270,7 +288,9 @@
     const frac = m.f / Math.max(1, S.info.n_frames - 1);
     $("progress").style.width = `${frac * 100}%`;
     $("head").style.left = `${frac * 100}%`;
-    $("timeLabel").textContent = `${fmtClock(m.f / S.info.fps)} / ${fmtClock(S.info.duration_s)}`;
+    $("timeLabel").textContent = m.live
+      ? (m.at_edge ? "in diretta" : `−${fmtClock(m.lag)} dal live`)
+      : `${fmtClock(m.f / S.info.fps)} / ${fmtClock(S.info.duration_s)}`;
     document.querySelectorAll("#speeds button").forEach((b) => b.classList.toggle("active", Number(b.dataset.speed) === m.speed));
     const syncing = m.sync < 0.995;
     $("syncBadge").hidden = !syncing;
@@ -482,6 +502,7 @@
       else if (m.type === "init") onInit(m);
       else if (m.type === "loading") $("loading").hidden = false;
       else if (m.type === "error") console.warn("server:", m.message);
+      else if (m.type === "waiting") $("loading").hidden = false;
     };
     ws.onclose = () => {
       $("liveDot").classList.remove("on");
@@ -491,6 +512,7 @@
 
   // ------------------------------------------------------------------ inputs
   $("playBtn").onclick = () => send({ cmd: S.playing ? "pause" : "play" });
+  $("goLive").onclick = () => send({ cmd: "go_live" });
   $("speeds").onclick = (e) => { const b = e.target.closest("button"); if (b) send({ cmd: "set_speed", speed: Number(b.dataset.speed) }); };
   $("timeline").onclick = (e) => {
     const r = $("timeline").getBoundingClientRect();
