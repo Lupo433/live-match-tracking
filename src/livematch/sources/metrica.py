@@ -19,6 +19,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from livematch.goals import annotate_goal_frames
 from livematch.schema import DEFAULT_FPS, PITCH_LENGTH, PITCH_WIDTH, Event, MatchInfo, Player, Team
 from livematch.sources.array_source import ArraySource, period_starts
 
@@ -131,6 +132,8 @@ def load_metrica(
     frame_ids = home.frame_ids
     events = _read_events(events_p, frame_ids, flip_periods) if events_p is not None else []
     times = home.times
+    dt_guess = float(np.median(np.diff(times))) if len(times) > 1 else 1 / DEFAULT_FPS
+    events = annotate_goal_frames(events, ball, 1.0 / dt_guess)
     dt = float(np.median(np.diff(times))) if len(times) > 1 else 1 / DEFAULT_FPS
     fps = round(1.0 / dt, 3)
     game = directory.name
@@ -212,3 +215,38 @@ def _read_events(path: Path, frame_ids: np.ndarray, flip_periods: list[int]) -> 
             )
         )
     return out
+
+
+def load_metrica_cached(
+    directory: str | Path,
+    match_id: str | None = None,
+    title: str | None = None,
+):
+    """Like :func:`load_metrica` but backed by the on-disk cache (``.cache/sources``).
+
+    The cache key depends on the CSV files (path, size, mtime), so changed
+    files are re-converted automatically.
+    """
+    from livematch import cache
+
+    directory = Path(directory)
+    files = [f for f in find_game_files(directory) if f is not None]
+    mid = match_id or directory.name.lower()
+    key = cache.fingerprint(files, f"{cache.SOURCE_CACHE_VERSION}|{mid}|{title}")
+    if cache.cache_enabled():
+        hit = cache.load_source(mid, key)
+        if hit is not None:
+            hit.cache_key = key
+            return hit
+    src = load_metrica(directory, mid, title)
+    if cache.cache_enabled():
+        try:
+            cache.save_source(src, key)
+            # return the round-tripped version so fresh and cached runs are identical
+            reloaded = cache.load_source(mid, key)
+            if reloaded is not None:
+                src = reloaded
+        except OSError as exc:  # read-only filesystem etc.
+            cache.log.warning("cannot write cache: %r", exc)
+    src.cache_key = key
+    return src

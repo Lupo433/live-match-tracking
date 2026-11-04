@@ -15,6 +15,9 @@ class DataSource(ABC):
     The replay engine, metrics and API only ever talk to this interface.
     """
 
+    cache_key: str | None = None
+    """Stable fingerprint of the data (``None`` = not cacheable, e.g. live feeds)."""
+
     @property
     @abstractmethod
     def info(self) -> MatchInfo:

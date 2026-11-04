@@ -282,25 +282,31 @@
   function updateScoreAndFeed(f) {
     let idx = -1;
     for (let i = 0; i < S.events.length && S.events[i].f <= f; i++) idx = i;
-    if (idx === S.lastFeedIdx) return;
-    S.lastFeedIdx = idx;
+    // a goal "happens" when the ball crosses the line (gf), not at the shot frame
+    const goalIn = (e) => e.goal && (e.gf ?? e.f) <= f;
+    let pendingIn = 0;
+    for (let i = Math.max(0, idx - 40); i <= idx; i++) if (S.events[i] && goalIn(S.events[i])) pendingIn++;
+    const key = `${idx}:${pendingIn}`;
+    if (key === S.lastFeedIdx) return;
+    S.lastFeedIdx = key;
     let h = 0, a = 0;
     const feed = [];
     for (let i = 0; i <= idx; i++) {
       const e = S.events[i];
-      if (e.goal) { if (e.team === "home") h++; else a++; }
-      if (KEY_EVENTS.has(e.type) || e.goal) feed.push(e);
+      if (goalIn(e)) { if (e.team === "home") h++; else a++; }
+      if (KEY_EVENTS.has(e.type) || e.goal) feed.push(goalIn(e) || !e.goal ? e : { ...e, goal: false, pending: true });
     }
     const scoreTxt = `${h} – ${a}`;
     if (S.lastScore !== undefined && h + a > S.lastScore) {
       const g = feed.filter((e) => e.goal).pop();
-      if (g && f - g.f < 10 * S.info.fps) showGoal(g);         // only "live" goals, not seeks
+      if (g && f - (g.gf ?? g.f) < 10 * S.info.fps) showGoal(g);         // only "live" goals, not seeks
     }
     S.lastScore = h + a;
     $("score").textContent = scoreTxt;
-    const lastKey = feed.length ? feed[feed.length - 1] : null;
+    const sig = (e) => (e ? `${e.f}|${e.type}|${e.goal}` : "");
+    const lastKey = (feed.length ? sig(feed[feed.length - 1]) : "") + `#${h + a}`;
     if (lastKey === S.lastKeyEvent) return;                      // key-event list unchanged
-    const appended = S.lastKeyEvent && feed.length >= 2 && feed[feed.length - 2] === S.lastKeyEvent;
+    const appended = S.lastKeyEvent && feed.length >= 2 && (sig(feed[feed.length - 2]) + `#${h + a}` === S.lastKeyEvent || feed[feed.length - 1].goal);
     S.lastKeyEvent = lastKey;
     const ul = $("feed");
     ul.innerHTML = "";
@@ -319,7 +325,8 @@
     const offs = { 1: 0, 2: 45 * 60, 3: 90 * 60, 4: 105 * 60 };
     const start = S.info.period_starts[String(e.period)];
     if (start === undefined) return fmtClock(e.t);
-    return fmtClock(offs[e.period] + Math.max(0, (e.f - start) / S.info.fps));
+    const fr = e.goal && e.gf != null ? e.gf : e.f;
+    return fmtClock(offs[e.period] + Math.max(0, (fr - start) / S.info.fps));
   }
 
   function showGoal(e) {
@@ -335,6 +342,7 @@
   function eventLabel(e) {
     const sub = (e.sub || "").toUpperCase();
     if (e.goal) return ["⚽", "GOL"];
+    if (e.pending) return ["◎", "Tiro in porta…"];
     if (e.type === "SHOT") {
       if (sub.includes("WOODWORK")) return ["◎", "Palo"];
       if (sub.includes("BLOCKED")) return ["◎", "Tiro respinto"];

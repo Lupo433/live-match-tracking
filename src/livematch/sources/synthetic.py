@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from livematch.goals import annotate_goal_frames
 from livematch.schema import (
     DEFAULT_FPS,
     PITCH_LENGTH,
@@ -207,6 +208,7 @@ def generate_synthetic(
         period_starts=period_starts(periods),
         source="synthetic",
     )
+    events = annotate_goal_frames(events, ball_arr, fps)
     return ArraySource(info, players, positions, ball_arr, timestamps, periods, events)
 
 
@@ -248,5 +250,12 @@ class SyntheticSource(ArraySource):
     ) -> None:
         src = generate_synthetic(duration_s, fps, seed, match_id)
         super().__init__(
-            src.info, src.players, src.positions, src.ball, src.timestamps, src.periods, src.events
+            src.info,
+            src.players,
+            src.positions,
+            src.ball,
+            src.timestamps,
+            src.periods,
+            src.events,
+            cache_key=f"synthetic-{duration_s}-{fps}-{seed}-{match_id}",
         )

@@ -32,6 +32,7 @@ class ArraySource(DataSource):
         timestamps: np.ndarray,
         periods: np.ndarray,
         events: list[Event],
+        cache_key: str | None = None,
     ) -> None:
         n = len(timestamps)
         if positions.shape != (n, len(players), 2) or ball.shape != (n, 2):
@@ -43,6 +44,8 @@ class ArraySource(DataSource):
         self.timestamps = np.asarray(timestamps, dtype=np.float64)
         self.periods = np.asarray(periods, dtype=np.int64)
         self._events = sorted(events, key=lambda e: e.timestamp)
+        self.cache_key = cache_key
+        """Fingerprint of the underlying data; enables on-disk caching when set."""
 
     @property
     def info(self) -> MatchInfo:

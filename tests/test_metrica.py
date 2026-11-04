@@ -30,7 +30,7 @@ def test_flip_is_rotation_around_centre():
 def test_sample_shape_and_metadata(sample):
     assert sample.info.fps == 25.0
     assert len(sample) == 3000
-    assert sample.info.period_starts == {1: 0, 2: 1500}
+    assert sample.info.period_starts == {1: 0, 2: 2375}
     assert len(sample.players) == 28  # 14 per team including substitutes
     assert sum(p.team == Team.HOME for p in sample.players) == 14
 
@@ -59,7 +59,7 @@ def test_home_attacks_right_in_both_halves(sample):
 
 def test_second_half_flipped(sample):
     # raw second half: home GK at x ~0.90 (right side) -> after flip ~10 m
-    f = sample.frame(1500)
+    f = sample.frame(2375)
     assert f.period == 2
     assert f.positions[0, 0] < 15
 

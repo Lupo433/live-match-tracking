@@ -52,6 +52,7 @@ class CheckpointStore:
         self._lock = threading.Lock()
         self._thread: threading.Thread | None = None
         self.done = False
+        self.loaded_from_cache = False
         self.final_snapshot: dict[str, Any] | None = None
 
     def start(self) -> CheckpointStore:
@@ -60,7 +61,28 @@ class CheckpointStore:
             self._thread.start()
         return self
 
+    def _cache_key(self) -> str | None:
+        from livematch import cache
+
+        key = getattr(self.source, "cache_key", None)
+        if key is None or not cache.cache_enabled():
+            return None
+        return f"{key}-v{cache.CHECKPOINT_CACHE_VERSION}-e{self.every}".replace("/", "_")
+
     def run(self) -> None:
+        from livematch import cache
+
+        key = self._cache_key()
+        mid = self.source.info.match_id
+        if key is not None:
+            data = cache.load_checkpoints(mid, key)
+            if data is not None:
+                with self._lock:
+                    self._checkpoints = dict(data["checkpoints"])
+                self.final_snapshot = data["final"]
+                self.loaded_from_cache = True
+                self.done = True
+                return
         engine = self.engine_factory(self.source)
         for i, frame in enumerate(self.source.frames()):
             if i % self.every == 0 and i > 0:
@@ -72,6 +94,13 @@ class CheckpointStore:
                 time.sleep(0)  # yield the GIL to the event loop
         self.final_snapshot = engine.snapshot()
         self.done = True
+        if key is not None:
+            try:
+                with self._lock:
+                    cps = dict(self._checkpoints)
+                cache.save_checkpoints(mid, key, {"checkpoints": cps, "final": self.final_snapshot})
+            except OSError as exc:
+                cache.log.warning("cannot write checkpoint cache: %r", exc)
 
     def best(self, frame: int) -> tuple[int, Any] | None:
         """Closest checkpoint at or before ``frame`` (state after ``k`` frames)."""
@@ -119,6 +148,7 @@ def event_dict(e: Event) -> dict[str, Any]:
         "ex": None if e.end_x is None else round(e.end_x, 1),
         "ey": None if e.end_y is None else round(e.end_y, 1),
         "goal": e.is_goal,
+        "gf": e.goal_frame,
     }
 
 

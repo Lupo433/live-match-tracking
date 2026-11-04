@@ -58,7 +58,7 @@ class Catalog:
 
 def default_catalog(base: Path | None = None) -> Catalog:
     """Build the catalog from what exists on disk (synthetic is always present)."""
-    from livematch.sources.metrica import load_metrica
+    from livematch.sources.metrica import load_metrica_cached
     from livematch.sources.synthetic import SyntheticSource
 
     base = base or data_dir()
@@ -72,7 +72,9 @@ def default_catalog(base: Path | None = None) -> Catalog:
                 MatchEntry(
                     mid,
                     f"Metrica Sample Game {g} (full match)",
-                    lambda d=d, mid=mid, g=g: load_metrica(d, mid, f"Metrica Sample Game {g}"),
+                    lambda d=d, mid=mid, g=g: load_metrica_cached(
+                        d, mid, f"Metrica Sample Game {g}"
+                    ),
                 )
             )
     sample = base / "sample" / "Sample_Game_1"
@@ -81,7 +83,7 @@ def default_catalog(base: Path | None = None) -> Catalog:
             MatchEntry(
                 "sample_game_1",
                 "Metrica Game 1 - 2 min sample",
-                lambda: load_metrica(sample, "sample_game_1", "Metrica Game 1 (sample)"),
+                lambda: load_metrica_cached(sample, "sample_game_1", "Metrica Game 1 (sample)"),
             )
         )
     entries.append(

@@ -80,7 +80,7 @@ Away,PASS,,1,1,0.04,3,0.12,Player19,Player21,0.45,0.39,0.55,0.43
 
 ## Campione committato (`data/sample/`)
 
-`scripts/make_sample.py` crea `data/sample/Sample_Game_1/` con **i primi 60 s di ciascun tempo** del Game 1 (3 000 frame totali,
+`scripts/make_sample.py` crea `data/sample/Sample_Game_1/` con **i primi 95 s del 1° tempo e i primi 25 s del 2°** del Game 1 (3 000 frame totali, incluso il primo gol al minuto 01:31,
 ~1.3 MB) nello stesso formato CSV, più gli eventi che cadono in quelle finestre. Include entrambi i tempi per testare il cambio di lato.
-In questo caso i frame **non sono contigui** (salto da 1 500 a 71 269): il loader usa l'indice di riga come `frame_id` interno e
+In questo caso i frame **non sono contigui** (salto dal frame 2 375 al 71 269): il loader usa l'indice di riga come `frame_id` interno e
 mappa gli eventi tramite il numero di frame originale.

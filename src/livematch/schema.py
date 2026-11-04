@@ -86,10 +86,17 @@ class Event:
     end_x: float | None = None
     end_y: float | None = None
     end_timestamp: float | None = None
+    goal_frame: int | None = None
+    """For goals: frame where the ball crosses the line (falls back to ``frame_id``)."""
 
     @property
     def is_goal(self) -> bool:
         return self.event_type == "SHOT" and "GOAL" in self.subtype.upper()
+
+    @property
+    def effective_frame(self) -> int:
+        """Frame at which the event "happens" for the live clock (goal line for goals)."""
+        return self.goal_frame if self.goal_frame is not None else self.frame_id
 
 
 @dataclass(frozen=True, slots=True)
