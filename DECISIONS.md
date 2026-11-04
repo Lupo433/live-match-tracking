@@ -12,3 +12,8 @@ Scelte prese in autonomia durante lo sviluppo notturno, con la motivazione.
 8. **Identificativi giocatore** `H<n>` / `A<n>` (es. `H11`): brevi nei messaggi WebSocket e indipendenti dal provider.
 9. **Portiere = prima colonna di ogni squadra** nei CSV Metrica (verificato sulle posizioni medie). Serve per la linea difensiva.
 10. **Verso di attacco ricavato dai dati** (x media della squadra di casa nei primi 10 s di ogni periodo) invece di assumerlo: Game 1 e Game 2 hanno orientamenti opposti.
+11. **Un messaggio ogni 40 ms indipendentemente dalla velocità**: a 10× il server avanza di 10 frame per tick ma invia solo l'ultimo snapshot (le metriche invece consumano tutti i frame). Il client interpola tra gli ultimi due snapshot con `requestAnimationFrame`, quindi il movimento resta fluido anche a 60 fps.
+12. **Statistiche a ~5 Hz** (ogni 5 tick) e posizioni a 25 Hz, per tenere i messaggi piccoli. Il messaggio dopo un comando include sempre le statistiche.
+13. **Posizioni come lista piatta `[x0, y0, x1, y1, ...]`** allineata al roster, arrotondate al centimetro, `null` per i giocatori fuori campo.
+14. **Una sessione di replay per connessione WebSocket**: ogni spettatore ha il proprio replay (come un "DVR"); la sorgente dati è condivisa e caricata una sola volta (cache nel catalogo).
+15. **Velocità ammesse**: 0.5×, 1×, 2×, 5×, 10× (0.5× aggiunto per analizzare le azioni).

@@ -1,0 +1,166 @@
+"""FastAPI application: REST endpoints + the live WebSocket."""
+
+from __future__ import annotations
+
+import asyncio
+import contextlib
+import logging
+import time
+from pathlib import Path
+from typing import Any
+
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+
+from livematch.catalog import Catalog, default_catalog
+from livematch.session import EngineFactory, MatchSession, event_dict, player_dict
+
+log = logging.getLogger("livematch")
+WEB_DIR = Path(__file__).resolve().parent / "web"
+TICK_S = 0.04  # 25 messages per second
+
+
+def _default_engine_factory() -> EngineFactory | None:
+    try:
+        from livematch.metrics.engine import MetricsEngine
+    except ImportError:  # pragma: no cover - metrics package not available
+        return None
+    return MetricsEngine.for_source
+
+
+def create_app(
+    catalog: Catalog | None = None,
+    engine_factory: EngineFactory | None = None,
+    tick_s: float = TICK_S,
+) -> FastAPI:
+    """Build the application (dependencies injectable for tests)."""
+    catalog = catalog or default_catalog()
+    engine_factory = engine_factory or _default_engine_factory()
+    app = FastAPI(title="Live Match Tracking", version="0.1.0")
+    app.state.catalog = catalog
+    summary_cache: dict[str, dict[str, Any]] = {}
+
+    def _get_source(match_id: str):
+        if match_id not in catalog:
+            raise HTTPException(404, f"unknown match {match_id!r}")
+        return catalog.get(match_id)
+
+    def _matches() -> list[dict[str, Any]]:
+        return [{"match_id": e.match_id, "title": e.title} for e in catalog.list()]
+
+    @app.get("/", include_in_schema=False)
+    def index() -> FileResponse:
+        return FileResponse(WEB_DIR / "index.html")
+
+    @app.get("/api/health")
+    def health() -> dict[str, str]:
+        return {"status": "ok"}
+
+    @app.get("/api/matches")
+    def matches() -> dict[str, Any]:
+        return {"default": catalog.default_id, "matches": _matches()}
+
+    @app.get("/api/matches/{match_id}")
+    def match_metadata(match_id: str) -> dict[str, Any]:
+        src = _get_source(match_id)
+        return {
+            "match": src.info.to_dict(),
+            "players": [player_dict(p) for p in src.players],
+            "n_events": len(src.events),
+        }
+
+    @app.get("/api/matches/{match_id}/events")
+    def match_events(match_id: str) -> list[dict[str, Any]]:
+        return [event_dict(e) for e in _get_source(match_id).events]
+
+    @app.get("/api/matches/{match_id}/summary")
+    def match_summary(match_id: str) -> dict[str, Any]:
+        """Final statistics of the whole match (computed once, then cached)."""
+        src = _get_source(match_id)
+        if engine_factory is None:
+            raise HTTPException(501, "metrics engine not available")
+        if match_id not in summary_cache:
+            engine = engine_factory(src)
+            for frame in src.frames():
+                engine.update(frame)
+            summary_cache[match_id] = engine.snapshot()
+        return {"match_id": match_id, "stats": summary_cache[match_id]}
+
+    @app.websocket("/ws")
+    async def live(ws: WebSocket) -> None:
+        await ws.accept()
+        match_id = ws.query_params.get("match_id") or catalog.default_id
+        if match_id not in catalog:
+            match_id = catalog.default_id
+        loop = asyncio.get_running_loop()
+
+        async def new_session(mid: str) -> MatchSession:
+            src = await loop.run_in_executor(None, catalog.get, mid)
+            return MatchSession(src, engine_factory)
+
+        await ws.send_json({"type": "loading", "match_id": match_id})
+        session = await new_session(match_id)
+        if ws.query_params.get("autoplay", "1") != "0":
+            session.replay.play()
+        await ws.send_json(session.init_message(_matches()))
+        force_stats = True
+        lock = asyncio.Lock()
+
+        async def receiver() -> None:
+            nonlocal session, force_stats
+            while True:
+                msg = await ws.receive_json()
+                try:
+                    if msg.get("cmd") == "select_match":
+                        mid = str(msg.get("match_id"))
+                        if mid not in catalog:
+                            raise ValueError(f"unknown match {mid!r}")
+                        await ws.send_json({"type": "loading", "match_id": mid})
+                        new = await new_session(mid)
+                        new.replay.play()
+                        async with lock:
+                            session = new
+                        await ws.send_json(session.init_message(_matches()))
+                    else:
+                        async with lock:
+                            session.handle(msg)
+                    force_stats = True
+                except (ValueError, KeyError, TypeError) as exc:
+                    await ws.send_json({"type": "error", "message": str(exc)})
+
+        async def sender() -> None:
+            nonlocal force_stats
+            next_t = time.perf_counter()
+            while True:
+                async with lock:
+                    msg = session.tick(budget_s=tick_s * 0.6, force_stats=force_stats)
+                force_stats = False
+                await ws.send_json(msg)
+                next_t += tick_s
+                delay = next_t - time.perf_counter()
+                if delay < -0.5:  # we fell far behind: re-sync instead of bursting
+                    next_t = time.perf_counter()
+                await asyncio.sleep(max(0.0, delay))
+
+        tasks = [asyncio.create_task(receiver()), asyncio.create_task(sender())]
+        try:
+            done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_EXCEPTION)
+            for t in done:
+                exc = t.exception()
+                if exc and not isinstance(exc, WebSocketDisconnect):
+                    log.warning("websocket closed: %r", exc)
+        finally:
+            for t in tasks:
+                t.cancel()
+            for t in tasks:
+                with contextlib.suppress(BaseException):
+                    await t
+
+    app.mount("/static", StaticFiles(directory=WEB_DIR), name="static")
+    return app
+
+
+def app_factory() -> FastAPI:
+    """Entry point for ``uvicorn --factory livematch.api:app_factory``."""
+    return create_app()
