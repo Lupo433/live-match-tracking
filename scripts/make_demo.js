@@ -4,8 +4,8 @@
  * full Metrica Game 1 downloaded):
  *   NODE_PATH=$(npm root -g) node scripts/make_demo.js
  *
- * Produces docs/demo.gif, docs/screenshot_pitch_control.png,
- * docs/screenshot_heatmap.png and docs/screenshot_mobile.png.
+ * Produces docs/demo.gif, docs/screenshot_pitch_control.png, docs/screenshot_heatmap.png,
+ * docs/screenshot_marketing.png and docs/screenshot_mobile.png.
  */
 const { chromium, devices } = require("playwright");
 const { execFileSync } = require("child_process");
@@ -79,6 +79,12 @@ async function goalFrame(n) {
   await p.click("#playersTable tbody tr:nth-child(1)");
   await sleep(1500);
   await p.screenshot({ path: path.join(DOCS, "screenshot_heatmap.png"), fullPage: true });
+
+  // marketing card (synthetic engagement) after the second goal
+  await p.evaluate((f) => window.__lmt.send({ cmd: "seek", frame: f }), gf + 25 * 120);
+  await p.waitForSelector("#mkCard:not([hidden])");
+  await sleep(2500);
+  await (await p.$("#mkCard")).screenshot({ path: path.join(DOCS, "screenshot_marketing.png") });
 
   const m = await browser.newContext({ ...devices["iPhone 13"] });
   const mp = await m.newPage();

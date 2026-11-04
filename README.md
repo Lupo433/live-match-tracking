@@ -21,14 +21,21 @@ dei dati pubblici [Metrica Sports](https://github.com/metrica-sports/sample-data
 
 - **Replay "live"** a 0.5×, 1×, 2×, 5×, 10× con pausa, ripresa e seek su un punto qualsiasi della partita (click sulla timeline).
 - **WebSocket a 25 messaggi/s** con posizioni compatte; il browser interpola tra gli snapshot a 60 fps.
-- **Motore di statistiche incrementale**: ogni frame aggiorna lo stato delle metriche, nulla viene ricalcolato da zero.
-- **Pannello live**: barre possesso e pitch control, KPI di squadra (tiri, passaggi, distanza, sprint, alta intensità,
-  larghezza, lunghezza, linea difensiva, falli, velocità palla), tabella giocatori ordinabile, heatmap del giocatore
-  selezionato (click sul pallino o sulla riga), feed eventi, banner al gol, timeline con tiri/gol/cartellini.
-- **Overlay sul campo**: pitch control (rosso/azzurro), inviluppo convesso di ogni squadra con baricentro e linea difensiva,
+- **Motore di statistiche incrementale**: ogni frame aggiorna lo stato delle metriche, nulla viene ricalcolato da zero;
+  checkpoint su disco per seek e riavvii istantanei.
+- **Pannello live**: barre possesso e pitch control, KPI di squadra (tiri, xG, xT, passaggi, distanza, sprint, alta intensità,
+  larghezza, lunghezza, linea difensiva, falli, velocità palla), tabella giocatori ordinabile (anche per xT), heatmap del
+  giocatore selezionato, feed eventi, banner al gol (al passaggio della linea di porta), timeline con tiri/gol/cartellini,
+  xG cumulato ed excitement index.
+- **Overlay sul campo**: pitch control, forma di squadra (inviluppo, baricentro, linea difensiva), rete dei passaggi,
   scia della palla, anello sul giocatore in possesso.
-- 4 partite disponibili: Metrica Game 1 e Game 2 complete (se scaricate), un campione di 2 minuti incluso nel repo
-  e una partita sintetica generata.
+- **Feed live simulato end-to-end** (`--live-demo`): fake provider con formato diverso, pacchetti persi/fuori ordine e
+  disconnessioni → adattatore con jitter buffer → badge LIVE, DVR e "Torna al live".
+- **Analytics dimostrative**: xT, xG, reti di passaggi e **report post-partita** HTML autonomo.
+- **Angolo marketing**: excitement index per secondo e scheda che lo confronta con serie di engagement
+  (**dati sintetici dimostrativi**), con event study e correlazione.
+- 4 partite: Metrica Game 1 e Game 2 complete (se scaricate), un campione di 2 minuti incluso nel repo (con un gol)
+  e una partita sintetica. Più la partita "● LIVE demo" in modalità `--live-demo`.
 
 ## Avvio rapido
 
@@ -64,6 +71,23 @@ Una partita specifica si apre con `http://127.0.0.1:8000/?match=metrica_game_2`.
 
 Comandi da tastiera: **spazio** = play/pausa. Click sulla timeline = seek. Click su un giocatore = heatmap.
 
+Altri comandi:
+
+```bash
+python -m livematch --live-demo
+```
+
+```bash
+python -m livematch.report sample_game_1 -o report.html
+```
+
+```bash
+python scripts/make_synthetic_engagement.py sample_game_1
+```
+
+Il primo avvia il feed live simulato (vedi sotto), il secondo genera il report post-partita, il terzo scrive un CSV di
+engagement **sintetico** in `data/synthetic/`. `python scripts/fit_models.py` riaddestra i modelli dimostrativi xT/xG.
+
 ### Test e lint
 
 ```bash
@@ -74,8 +98,11 @@ python -m pytest
 ruff check . && ruff format --check .
 ```
 
-I test (57) coprono loader e conversione coordinate, replay (timing, velocità, seek), ogni metrica con casi dal risultato
-noto, sessione (nessun frame perso a 10×, seek coerente), API REST e WebSocket, adattatore live ed end-to-end sul campione.
+I test (96) coprono loader e conversione coordinate, cache su disco (hit, stale, corrotta), rilevamento del gol, replay
+(timing, velocità, seek) e LiveClock, ogni metrica con casi dal risultato noto, sessione (nessun frame perso a 10×, seek
+coerente), API REST e WebSocket, feed live (jitter buffer, ricostruzione esatta dal formato del provider, perdite e
+riordino, end-to-end su WebSocket con disconnessioni), xT/xG/rete passaggi, report, excitement index, engagement
+(allineamento, lift, ritardo) ed end-to-end sul campione.
 La CI GitHub Actions (`.github/workflows/ci.yml`) esegue ruff e pytest a ogni push.
 
 ## Architettura
@@ -85,20 +112,24 @@ flowchart LR
     subgraph Sorgenti["sources/ (intercambiabili)"]
         M[metrica.py<br/>CSV Metrica] --> DS
         S[synthetic.py<br/>generatore] --> DS
-        L[live_stub.py<br/>feed live] -.-> DS
+        L[live_stub.py<br/>ProviderFeedSource<br/>jitter buffer] --> DS
         DS{{DataSource<br/>interfaccia astratta}}
     end
+    FP[live/provider.py<br/>fake provider WS<br/>formato estraneo] -->|25 Hz, perdite,<br/>riordino, disconnessioni| L
+    M -.-> CA[(cache.py<br/>.cache/ npz + checkpoint)]
     DS --> SES[session.py<br/>MatchSession]
-    RC[replay.py<br/>ReplayClock<br/>play/pausa/seek/velocità] --> SES
+    RC[replay.py<br/>ReplayClock / LiveClock<br/>velocità, seek, DVR] --> SES
     SES --> ENG[metrics/engine.py<br/>MetricsEngine incrementale]
-    ENG --> K[cinematica<br/>sprint / HI]
-    ENG --> H[heatmap]
-    ENG --> P[possesso]
-    ENG --> SH[forma squadra]
-    ENG --> PC[pitch control]
-    ENG --> EV[eventi]
-    CK[CheckpointStore<br/>thread in background] -.checkpoint ogni minuto.-> SES
+    ENG --> K[cinematica, sprint/HI,<br/>heatmap, possesso,<br/>forma, pitch control]
+    ENG --> TH[threat.py<br/>xT / xG live]
+    ENG --> EX[excitement.py<br/>indice per secondo]
+    AN[analytics/<br/>xT, xG, passaggi<br/>models.json] --> TH
+    CK[CheckpointStore<br/>background + disco] -.checkpoint ogni minuto.-> SES
+    CA -.-> CK
     SES --> API[api.py<br/>FastAPI REST + WebSocket]
+    EX --> MK[engagement/<br/>allineamento, event study<br/>dati SINTETICI]
+    MK --> API
+    API --> REP[report.py<br/>HTML post-partita]
     API <-->|JSON ~25 msg/s<br/>comandi| WEB[web/<br/>index.html + app.js + canvas]
 ```
 
@@ -220,6 +251,8 @@ Coordinate in metri, campo 105 × 68, origine in basso a sinistra; **la squadra 
   curva di engagement sintetica fino al minuto corrente, momenti chiave ordinati per lift (cliccabili per rivederli),
   correlazione massima e relativo ritardo. Endpoint: `GET /api/matches/{id}/marketing`.
 
+![Scheda Marketing con excitement index ed engagement sintetico](docs/screenshot_marketing.png)
+
 Esempio sul Game 1 (dati sintetici): lift del 1° gol +369%, del 2° +260%; correlazione massima excitement/engagement
 r = 0.37 con 20 s di ritardo. Questi numeri descrivono il generatore sintetico, non un pubblico reale.
 
@@ -301,6 +334,8 @@ Metriche, API e frontend restano invariati: dipendono solo da `DataSource`.
 ## Documentazione
 
 - [`docs/data_format.md`](docs/data_format.md) — formato dei dati Metrica, verificato sui file reali.
+- [`docs/excitement_index.md`](docs/excitement_index.md) — formula, pesi e normalizzazione dell'excitement index.
+- [`docs/deploy.md`](docs/deploy.md) — Docker, Fly.io, Render (istruzioni, nessun deploy eseguito).
 - [`DECISIONS.md`](DECISIONS.md) — scelte progettuali e motivazioni.
 - [`PROGRESS.md`](PROGRESS.md) — stato del lavoro e prossimi passi.
 - [`ROADMAP.md`](ROADMAP.md) — idee future (tracking da video, xT, xG, marketing analytics).
