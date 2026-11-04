@@ -8,3 +8,7 @@ Scelte prese in autonomia durante lo sviluppo notturno, con la motivazione.
 4. **`DataSource` con accesso casuale (`frame(i)`)** oltre all'iterazione: serve al seek del replay. Una sorgente live vera può implementare `frame(i)` su un buffer circolare.
 5. **Sorgente sintetica sempre disponibile** (anche quando i dati Metrica ci sono): è il fixture dei test ed è utile per demo senza dati.
 6. **Test con `python -m pytest`**: nell'ambiente cloud `pytest` globale punta a un altro interprete; `pythonpath = ["src"]` in pyproject rende i test robusti.
+7. **Campione = 60 s del 1° tempo + 60 s del 2° tempo** (Game 1), invece di 2 minuti consecutivi: così i test coprono anche il cambio di lato.
+8. **Identificativi giocatore** `H<n>` / `A<n>` (es. `H11`): brevi nei messaggi WebSocket e indipendenti dal provider.
+9. **Portiere = prima colonna di ogni squadra** nei CSV Metrica (verificato sulle posizioni medie). Serve per la linea difensiva.
+10. **Verso di attacco ricavato dai dati** (x media della squadra di casa nei primi 10 s di ogni periodo) invece di assumerlo: Game 1 e Game 2 hanno orientamenti opposti.
