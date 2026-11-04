@@ -75,3 +75,12 @@ def test_websocket_commands(client):
         ws.send_json({"cmd": "select_match", "match_id": "sample_game_1"})
         init = _recv_until(ws, "init")
         assert init["match"]["match_id"] == "sample_game_1"
+
+
+def test_summary_endpoint(client):
+    r = client.get("/api/matches/sample_game_1/summary")
+    assert r.status_code == 200
+    st = r.json()["stats"]
+    assert st["frame"] == 2999
+    assert st["poss"]["home"] + st["poss"]["away"] == pytest.approx(1.0)
+    assert len(st["players"]) >= 22
