@@ -14,7 +14,13 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from livematch.catalog import Catalog, default_catalog
-from livematch.session import EngineFactory, MatchSession, event_dict, player_dict
+from livematch.session import (
+    CheckpointStore,
+    EngineFactory,
+    MatchSession,
+    event_dict,
+    player_dict,
+)
 
 log = logging.getLogger("livematch")
 WEB_DIR = Path(__file__).resolve().parent / "web"
@@ -33,13 +39,26 @@ def create_app(
     catalog: Catalog | None = None,
     engine_factory: EngineFactory | None = None,
     tick_s: float = TICK_S,
+    precompute: bool = True,
 ) -> FastAPI:
-    """Build the application (dependencies injectable for tests)."""
+    """Build the application (dependencies injectable for tests).
+
+    With ``precompute`` the metrics of each match are pre-computed once in a
+    background thread (checkpoints every minute) so that seeking is instant.
+    """
     catalog = catalog or default_catalog()
     engine_factory = engine_factory or _default_engine_factory()
     app = FastAPI(title="Live Match Tracking", version="0.1.0")
     app.state.catalog = catalog
     summary_cache: dict[str, dict[str, Any]] = {}
+    stores: dict[str, CheckpointStore] = {}
+
+    def _store(match_id: str) -> CheckpointStore | None:
+        if not precompute or engine_factory is None:
+            return None
+        if match_id not in stores:
+            stores[match_id] = CheckpointStore(catalog.get(match_id), engine_factory).start()
+        return stores[match_id]
 
     def _get_source(match_id: str):
         if match_id not in catalog:
@@ -80,6 +99,9 @@ def create_app(
         src = _get_source(match_id)
         if engine_factory is None:
             raise HTTPException(501, "metrics engine not available")
+        store = stores.get(match_id)
+        if store is not None and store.final_snapshot is not None:
+            summary_cache[match_id] = store.final_snapshot
         if match_id not in summary_cache:
             engine = engine_factory(src)
             for frame in src.frames():
@@ -97,7 +119,7 @@ def create_app(
 
         async def new_session(mid: str) -> MatchSession:
             src = await loop.run_in_executor(None, catalog.get, mid)
-            return MatchSession(src, engine_factory)
+            return MatchSession(src, engine_factory, store=_store(mid))
 
         await ws.send_json({"type": "loading", "match_id": match_id})
         session = await new_session(match_id)

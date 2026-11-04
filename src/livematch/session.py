@@ -8,6 +8,7 @@ every ~40 ms to obtain the next message to broadcast.
 from __future__ import annotations
 
 import math
+import threading
 import time
 from collections.abc import Callable
 from typing import Any, Protocol
@@ -32,6 +33,60 @@ EngineFactory = Callable[[DataSource], Engine]
 
 STATS_EVERY_TICKS = 5  # stats are sent at ~5 Hz, positions at ~25 Hz
 CHECKPOINT_EVERY = 1500  # frames (1 minute at 25 Hz)
+
+
+class CheckpointStore:
+    """Metric-engine checkpoints of a whole match, computed once in a background thread.
+
+    Shared by every session replaying the same match: seeking anywhere only
+    requires replaying at most ``every`` frames from the closest checkpoint.
+    """
+
+    def __init__(
+        self, source: DataSource, engine_factory: EngineFactory, every: int = CHECKPOINT_EVERY
+    ) -> None:
+        self.source = source
+        self.engine_factory = engine_factory
+        self.every = every
+        self._checkpoints: dict[int, Any] = {}
+        self._lock = threading.Lock()
+        self._thread: threading.Thread | None = None
+        self.done = False
+        self.final_snapshot: dict[str, Any] | None = None
+
+    def start(self) -> CheckpointStore:
+        if self._thread is None:
+            self._thread = threading.Thread(target=self.run, daemon=True, name="checkpoints")
+            self._thread.start()
+        return self
+
+    def run(self) -> None:
+        engine = self.engine_factory(self.source)
+        for i, frame in enumerate(self.source.frames()):
+            if i % self.every == 0 and i > 0:
+                state = engine.checkpoint()
+                with self._lock:
+                    self._checkpoints[i] = state
+            engine.update(frame)
+            if i % 200 == 0:
+                time.sleep(0)  # yield the GIL to the event loop
+        self.final_snapshot = engine.snapshot()
+        self.done = True
+
+    def best(self, frame: int) -> tuple[int, Any] | None:
+        """Closest checkpoint at or before ``frame`` (state after ``k`` frames)."""
+        with self._lock:
+            keys = [k for k in self._checkpoints if k <= frame]
+            if not keys:
+                return None
+            k = max(keys)
+            return k, self._checkpoints[k]
+
+    @property
+    def progress(self) -> float:
+        with self._lock:
+            n = max(self._checkpoints, default=0)
+        return 1.0 if self.done else n / max(1, self.source.info.n_frames)
 
 
 def _flat(arr: np.ndarray) -> list[float | None]:
@@ -75,6 +130,7 @@ class MatchSession:
         source: DataSource,
         engine_factory: EngineFactory | None = None,
         clock: Callable[[], float] = time.monotonic,
+        store: CheckpointStore | None = None,
     ) -> None:
         self.source = source
         self.info = source.info
@@ -83,6 +139,7 @@ class MatchSession:
         self.engine: Engine | None = engine_factory(source) if engine_factory else None
         self.cursor = 0  # next frame the metrics engine has to consume
         self._checkpoints: dict[int, Any] = {}
+        self.store = store
         self._ticks = 0
         self.selected: int | None = None  # player whose heatmap is streamed
         self._period_start_ts = {
@@ -120,17 +177,25 @@ class MatchSession:
     def seek(self, frame: int) -> None:
         frame = min(max(frame, 0), self.info.n_frames - 1)
         self.replay.seek(frame)
-        if self.engine is not None and frame < self.cursor:
-            # rewind the metrics to the closest checkpoint before the target
-            keys = [k for k in self._checkpoints if k <= frame]
-            if keys:
-                k = max(keys)
-                self.engine.restore(self._checkpoints[k])
-                self.cursor = k
+        if self.engine is None:
+            return
+        # closest known state at or before the target (own or shared checkpoints)
+        candidates = [(k, st) for k, st in self._checkpoints.items() if k <= frame]
+        if self.store is not None and (shared := self.store.best(frame)) is not None:
+            candidates.append(shared)
+        best = max(candidates, key=lambda c: c[0], default=None)
+        if frame < self.cursor:
+            if best is not None:
+                self.engine.restore(best[1])
+                self.cursor = best[0]
             else:
                 assert self._engine_factory is not None
                 self.engine = self._engine_factory(self.source)
                 self.cursor = 0
+        elif best is not None and best[0] > self.cursor:
+            # jump forward without replaying every intermediate frame
+            self.engine.restore(best[1])
+            self.cursor = best[0]
 
     # ------------------------------------------------------------------ messages
     def init_message(self, matches: list[dict[str, Any]] | None = None) -> dict[str, Any]:
@@ -148,6 +213,12 @@ class MatchSession:
         if self.engine is None:
             self.cursor = target + 1
             return
+        if self.store is not None and target - self.cursor > self.store.every:
+            # the shared background pass may have reached a closer checkpoint meanwhile
+            shared = self.store.best(target)
+            if shared is not None and shared[0] > self.cursor:
+                self.engine.restore(shared[1])
+                self.cursor = shared[0]
         deadline = time.perf_counter() + budget_s
         n = 0
         while self.cursor <= target:

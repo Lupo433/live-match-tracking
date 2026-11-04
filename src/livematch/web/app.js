@@ -163,9 +163,18 @@
     const r = Math.max(7, s * 1.15);
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.font = `700 ${Math.max(8, r * 0.95)}px Inter, system-ui, sans-serif`;
+    let owner = -1;
+    if (snap.ball) {
+      let bd = 2.5;
+      snap.pos.forEach((p, i) => { if (!p) return; const d = Math.hypot(p[0] - snap.ball[0], p[1] - snap.ball[1]); if (d < bd) { bd = d; owner = i; } });
+    }
     snap.pos.forEach((p, i) => {
       if (!p) return;
       const pl = S.players[i];
+      if (i === owner) {
+        ctx.beginPath(); ctx.arc(X(p[0]), Y(p[1]), r + 4, 0, 7);
+        ctx.strokeStyle = "rgba(255,255,255,0.85)"; ctx.lineWidth = 2; ctx.stroke();
+      }
       const x = X(p[0]), y = Y(p[1]);
       const sel = S.selected === i;
       ctx.beginPath(); ctx.arc(x, y + r * 0.18, r, 0, 7); ctx.fillStyle = "rgba(0,0,0,0.35)"; ctx.fill();
@@ -204,15 +213,18 @@
       ctx.strokeStyle = team === "home" ? "rgba(255,77,109,0.45)" : "rgba(60,203,244,0.45)";
       ctx.lineWidth = 1.2; ctx.setLineDash([4, 4]);
       ctx.fill(); ctx.stroke(); ctx.setLineDash([]);
-      const sh = S.stats && S.stats.teams && S.stats.teams[team];
-      if (sh && sh.line != null) {
-        const lx = team === "home" ? sh.line : L - sh.line;
+      // defensive line = mean x of the 4 deepest outfield players (same rule as the server)
+      const depth = pts.map((q) => (team === "home" ? q[0] : L - q[0])).sort((a, b) => a - b).slice(0, 4);
+      const line = depth.reduce((a, b) => a + b, 0) / depth.length;
+      const cx = pts.reduce((a, q) => a + q[0], 0) / pts.length, cy = pts.reduce((a, q) => a + q[1], 0) / pts.length;
+      {
+        const lx = team === "home" ? line : L - line;
         ctx.strokeStyle = team === "home" ? "rgba(255,77,109,0.6)" : "rgba(60,203,244,0.6)";
         ctx.setLineDash([2, 6]); ctx.lineWidth = 2;
         ctx.beginPath(); ctx.moveTo(X(lx), Y(0)); ctx.lineTo(X(lx), Y(W)); ctx.stroke(); ctx.setLineDash([]);
       }
-      if (sh && sh.cx != null) {
-        ctx.beginPath(); ctx.arc(X(sh.cx), Y(sh.cy), 4, 0, 7);
+      {
+        ctx.beginPath(); ctx.arc(X(cx), Y(cy), 4, 0, 7);
         ctx.fillStyle = team === "home" ? COLORS.home : COLORS.away; ctx.fill();
         ctx.strokeStyle = "#fff"; ctx.lineWidth = 1; ctx.stroke();
       }
@@ -233,11 +245,11 @@
         const k = ((ny - 1 - j) * nx + i) * 4;               // flip y for canvas
         const home = [255, 77, 109], away = [60, 203, 244];
         for (let ch = 0; ch < 3; ch++) img.data[k + ch] = home[ch] * p + away[ch] * (1 - p);
-        img.data[k + 3] = 40 + 110 * Math.abs(p - 0.5) * 2;
+        img.data[k + 3] = 18 + 72 * Math.abs(p - 0.5) * 2;
       }
       c.putImageData(img, 0, 0); pcImg = off;
     }
-    ctx.save(); ctx.imageSmoothingEnabled = true; ctx.globalAlpha = 0.75;
+    ctx.save(); ctx.imageSmoothingEnabled = true; ctx.globalAlpha = 0.9;
     ctx.drawImage(pcImg, X(0), Y(W), L * geom.scale, W * geom.scale);
     ctx.restore();
   }
@@ -283,11 +295,28 @@
     feed.slice(-25).reverse().forEach((e) => {
       const li = document.createElement("li");
       if (e.goal) li.className = "goal";
-      const label = e.goal ? "⚽ GOL" : e.type === "SHOT" ? "Tiro" : e.type === "CARD" ? "🟨 Cartellino" : e.type === "FAULT RECEIVED" ? "Fallo subito" : e.sub ? e.sub.toLowerCase() : e.type.toLowerCase();
+      const [ic, label] = eventLabel(e);
       const pl = e.player ? e.player.replace(/^[HA]/, "#") : "";
-      li.innerHTML = `<span class="t">${fmtClock(e.t)}</span><span class="${e.team || ""}">${label}</span><span class="muted">${pl}</span>`;
+      li.innerHTML = `<span class="t">${fmtClock(e.t)}</span><span class="ic">${ic}</span><span class="${e.team || ""}">${label}</span><span class="muted">${pl}</span>`;
       ul.appendChild(li);
     });
+  }
+
+  function eventLabel(e) {
+    const sub = (e.sub || "").toUpperCase();
+    if (e.goal) return ["⚽", "GOL"];
+    if (e.type === "SHOT") {
+      if (sub.includes("WOODWORK")) return ["◎", "Palo"];
+      if (sub.includes("BLOCKED")) return ["◎", "Tiro respinto"];
+      if (sub.includes("ON TARGET")) return ["◎", "Tiro parato"];
+      return ["◎", "Tiro fuori"];
+    }
+    if (e.type === "CARD") return [sub.includes("RED") ? "🟥" : "🟨", "Cartellino"];
+    if (e.type === "FAULT RECEIVED") return ["✕", "Fallo subito"];
+    const sp = { "KICK OFF": "Calcio d'inizio", "THROW IN": "Rimessa laterale", "FREE KICK": "Punizione",
+      "CORNER KICK": "Calcio d'angolo", "GOAL KICK": "Rinvio dal fondo", "PENALTY": "Rigore" };
+    for (const k in sp) if (sub.includes(k)) return ["↺", sp[k]];
+    return ["•", (e.sub || e.type).toLowerCase()];
   }
 
   function setDual(prefix, home) {
@@ -305,13 +334,16 @@
     if (st.teams) {
       const t = st.teams, f1 = (v, d = 1) => (v == null ? "–" : Number(v).toFixed(d));
       const rows = [
+        ["Tiri (in porta)", `${t.home.shots} (${t.home.on_target})`, `${t.away.shots} (${t.away.on_target})`],
+        ["Passaggi", t.home.passes, t.away.passes],
         ["Distanza (km)", f1(t.home.dist_km, 2), f1(t.away.dist_km, 2)],
         ["Sprint", t.home.sprints, t.away.sprints],
         ["Alta intensità (m)", f1(t.home.hi_m, 0), f1(t.away.hi_m, 0)],
         ["Larghezza (m)", f1(t.home.width), f1(t.away.width)],
         ["Lunghezza (m)", f1(t.home.length), f1(t.away.length)],
         ["Linea difensiva (m)", f1(t.home.line), f1(t.away.line)],
-        ["Vel. palla (km/h)", f1(st.ball ? st.ball.v * 3.6 : null, 0), `max ${f1(st.ball ? st.ball.vmax * 3.6 : null, 0)}`],
+        ["Falli commessi", t.home.fouls, t.away.fouls],
+        ["Vel. palla km/h (max)", f1(st.ball ? st.ball.v * 3.6 : null, 0), `(${f1(st.ball ? st.ball.vmax * 3.6 : null, 0)})`],
       ];
       $("teamKpis").innerHTML = rows.map(([k, h, a]) => `<span class="h">${h}</span><span class="k">${k}</span><span class="a">${a}</span>`).join("");
     }

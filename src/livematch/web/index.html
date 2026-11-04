@@ -48,6 +48,17 @@
         </div>
         <span class="time-label" id="timeLabel">00:00</span>
       </div>
+
+      <div class="below">
+        <div class="card">
+          <div class="card-head"><h3>Statistiche squadra</h3><span class="legend"><i class="home"></i>Home <i class="away"></i>Away</span></div>
+          <div class="kpis" id="teamKpis"></div>
+        </div>
+        <div class="card">
+          <h3>Eventi</h3>
+          <ul class="feed" id="feed"></ul>
+        </div>
+      </div>
     </section>
 
     <aside class="panel" id="panel">
@@ -59,7 +70,6 @@
         <div class="dual-bar"><div class="home" id="pcHome"></div><div class="away" id="pcAway"></div></div>
         <div class="dual-labels"><span id="pcHomeLbl">50%</span><span id="pcAwayLbl">50%</span></div>
       </div>
-      <div class="card kpis" id="teamKpis"></div>
       <div class="card">
         <div class="card-head">
           <h3>Giocatori</h3>
@@ -71,11 +81,11 @@
         <table class="players" id="playersTable">
           <thead><tr>
             <th data-sort="num">#</th>
-            <th data-sort="dist" class="sorted">Dist (km)</th>
-            <th data-sort="v">Vel</th>
-            <th data-sort="vmax">Max</th>
-            <th data-sort="spr">Sprint</th>
-            <th data-sort="hi">HI (m)</th>
+            <th data-sort="dist" class="sorted" title="Distanza percorsa">km</th>
+            <th data-sort="v" title="Velocità attuale (km/h)">km/h</th>
+            <th data-sort="vmax" title="Velocità massima (km/h)">Max</th>
+            <th data-sort="spr" title="Sprint: &gt;7 m/s per almeno 1 s">Sprint</th>
+            <th data-sort="hi" title="Metri ad alta intensità: &gt;5.5 m/s per almeno 1 s">HI m</th>
           </tr></thead>
           <tbody></tbody>
         </table>
@@ -84,10 +94,6 @@
       <div class="card" id="heatCard" hidden>
         <div class="card-head"><h3 id="heatTitle">Heatmap</h3><button class="link" id="heatClose">✕</button></div>
         <canvas id="heatmap"></canvas>
-      </div>
-      <div class="card">
-        <h3>Eventi</h3>
-        <ul class="feed" id="feed"></ul>
       </div>
     </aside>
   </main>
