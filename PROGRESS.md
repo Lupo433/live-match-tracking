@@ -43,6 +43,38 @@
 - Prestazioni a 10× sul Game 2: durante il pre-calcolo 40.0 ms medi, p99 80.2 ms, 2 495/2 500 frame; a cache calda 40.0 ms, p99 44.4 ms, 2 508/2 509; sync sempre 1.0. Motore ~305 µs/frame.
 - 10 test nuovi (situazioni sintetiche gol vs palleggio, decadimento, allineamento, lift noto, ritardo noto, determinismo).
 
+### Tappa 5 — Chiusura ✅
+- README (funzioni, architettura Mermaid con i nuovi moduli, protocollo, endpoint, metriche con xT/xG/excitement,
+  marketing, live, limiti), DECISIONS (punti 29–54), ROADMAP aggiornata, demo e screenshot rigenerati.
+
+#### Verifica da zero (4 nov 2026, ~22:30 CET)
+Clone fresco da GitHub in una cartella vuota, virtualenv nuovo, comandi del README uno per uno:
+- `pip install -e ".[dev]"` ✅ · `python -m pytest` ✅ **96 passed** (1 warning di deprecazione Starlette/httpx, innocuo)
+  · `ruff check . && ruff format --check .` ✅
+- `python scripts/download_data.py` ✅ · `python -m livematch.report sample_game_1 -o r.html` ✅
+  · `python scripts/make_synthetic_engagement.py sample_game_1` ✅ (CSV identico a quello committato: generatore deterministico)
+- `python -m livematch`: `/api/health` ok, 4 partite, report 200, marketing con `synthetic: true`, pagina senza errori JS ✅
+- `python -m livematch --live-demo`: live edge (lag 0), seek indietro → DVR −4 s, `go_live` → di nuovo in diretta;
+  feed: 630 pacchetti, 20 fuori ordine, 2 persi, 0 id sconosciuti; badge DVR nel browser ✅
+- **Non verificato**: build Docker (Docker Hub ha risposto 429 Too Many Requests; vedi `docs/deploy.md`).
+
+### Cosa manca / limiti (sessione 2)
+- Build Docker non testata; nessun deploy (fuori perimetro).
+- xT/xG addestrati su 2 partite: dimostrativi (IC dei coefficienti xG includono lo zero).
+- Pesi dell'excitement index scelti a mano; engagement solo sintetico.
+- Feed live: nessun client per un provider reale (fuori perimetro); entrando a metà del secondo tempo l'orologio parte
+  dal primo frame ricevuto.
+- La prima apertura di una partita completa dopo un cambio di versione della cache richiede ~10 s + ~40 s di
+  pre-calcolo in background.
+
+### Cosa fare per primo domattina
+1. `git pull`, poi `pip install -e ".[dev]"` (nuove dipendenze: nessuna; nuovi moduli sì).
+2. `python -m livematch` → aprire il Game 1, provare la scheda **Marketing** (in fondo), il pulsante **Report ↗**,
+   l'overlay **Rete passaggi** e la colonna **xT**.
+3. `python -m livematch --live-demo` → provare pausa, "Torna al live", DVR a 2×.
+4. Se serve una demo pubblica: provare `docker build` sul proprio PC (vedi `docs/deploy.md`).
+5. Rileggere le sezioni "Modelli dimostrativi" e "DATI SINTETICI DIMOSTRATIVI" del README prima di mostrarlo in azienda.
+
 ---
 
 ## Sessione 1
