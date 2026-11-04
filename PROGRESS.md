@@ -20,6 +20,14 @@ Numeri misurati:
 - Game 2 completo a 10× via WebSocket: 25 messaggi/s (intervallo medio 40.1 ms, p99 74 ms con il pre-calcolo in
   background attivo), 2 496 frame avanzati in 10 s su 2 503 attesi, metriche sempre sincronizzate, messaggi ~1 KB (max ~4 KB).
 
+## Verifica finale da ambiente pulito (4 nov 2026, ~21:25)
+Clone fresco da GitHub in una cartella vuota + virtualenv nuovo, seguendo il README passo per passo:
+- `pip install -e ".[dev]"` ✅
+- `python -m pytest` ✅ 57 passed (1 warning di deprecazione di Starlette su `httpx`, innocuo)
+- `ruff check . && ruff format --check .` ✅
+- `python scripts/download_data.py` ✅ (~6 s, 3 partite scaricate)
+- `python -m livematch` ✅ `/api/health` ok, pagina servita, screenshot headless con i giocatori in movimento e statistiche live, nessun errore JS né nel log del server.
+
 ## Cosa manca / limiti
 - Lo stub del feed live è documentato e testato come buffer, ma non c'è un client per un provider reale (non c'era un feed a disposizione).
 - Il pre-calcolo dei checkpoint di una partita completa dura ~35 s alla prima apertura: in quel lasso un seek lontano
