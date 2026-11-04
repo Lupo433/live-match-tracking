@@ -21,7 +21,10 @@
       <span class="live-badge" id="liveBadge" hidden>● LIVE</span>
       <button class="btn golive" id="goLive" hidden title="Torna al punto live">Torna al live ⏭</button>
     </div>
-    <select id="matchSelect" aria-label="Partita"></select>
+    <div class="top-actions">
+      <a class="btn small" id="reportLink" target="_blank" rel="noopener" title="Report post-partita (HTML autonomo)">Report ↗</a>
+      <select id="matchSelect" aria-label="Partita"></select>
+    </div>
   </header>
 
   <main class="layout">
@@ -32,6 +35,7 @@
           <label><input type="checkbox" id="togglePC"> Pitch control</label>
           <label><input type="checkbox" id="toggleShape" checked> Forma squadra</label>
           <label><input type="checkbox" id="toggleTrail" checked> Scia palla</label>
+          <label title="Squadra selezionata nella tabella giocatori"><input type="checkbox" id="toggleNet"> Rete passaggi</label>
         </div>
         <div class="sync" id="syncBadge" hidden>Sincronizzo statistiche… <span id="syncPct">0%</span></div>
         <div class="goal-banner" id="goalBanner"><b>GOL</b><span></span></div>
@@ -42,6 +46,7 @@
         <button id="playBtn" class="btn primary" title="Play/Pausa (spazio)">▶</button>
         <div class="speeds" id="speeds"></div>
         <div class="timeline" id="timeline" title="Clicca per spostarti nella partita">
+          <canvas id="tlCanvas" class="tl-canvas"></canvas>
           <div class="timeline-track">
             <div class="timeline-half" id="halfMarker"></div>
             <div class="timeline-progress" id="progress"></div>
@@ -89,6 +94,7 @@
             <th data-sort="vmax" title="Velocità massima (km/h)">Max</th>
             <th data-sort="spr" title="Sprint: &gt;7 m/s per almeno 1 s">Sprint</th>
             <th data-sort="hi" title="Metri ad alta intensità: &gt;5.5 m/s per almeno 1 s">HI m</th>
+            <th data-sort="xt" title="Expected Threat generato con passaggi e conduzioni (modello dimostrativo)">xT</th>
           </tr></thead>
           <tbody></tbody>
         </table>

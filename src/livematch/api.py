@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from livematch.catalog import Catalog, default_catalog
@@ -114,6 +114,52 @@ def create_app(
                 engine.update(frame)
             summary_cache[match_id] = engine.snapshot()
         return {"match_id": match_id, "stats": summary_cache[match_id]}
+
+    report_cache: dict[str, str] = {}
+
+    @app.get("/api/matches/{match_id}/report", response_class=HTMLResponse)
+    def match_report(match_id: str) -> HTMLResponse:
+        """Self-contained post-match HTML report."""
+        from livematch.metrics.engine import MetricsEngine
+        from livematch.report import build_report, compute_final_engine
+
+        src = _get_source(match_id)
+        if match_id not in report_cache or src.info.source == "live":
+            store = _store(match_id)  # background pre-computation (or disk cache)
+            state = None
+            if store is not None:
+                deadline = time.monotonic() + 180
+                while not store.done and time.monotonic() < deadline:
+                    time.sleep(0.2)
+                state = store.final_state()
+            engine = compute_final_engine(src, state)
+            assert isinstance(engine, MetricsEngine)
+            report_cache[match_id] = build_report(src, engine)
+        return HTMLResponse(report_cache[match_id])
+
+    @app.get("/api/matches/{match_id}/passnetwork")
+    def match_pass_network(
+        match_id: str, until_frame: int | None = None, min_passes: int = 3
+    ) -> dict[str, Any]:
+        """Average positions and pass links of both teams (optionally up to a frame)."""
+        from livematch.analytics.passes import pass_network
+        from livematch.schema import Team
+
+        src = _get_source(match_id)
+        return {t.value: pass_network(src.events, t, until_frame) for t in (Team.HOME, Team.AWAY)}
+
+    @app.get("/api/models")
+    def models_info() -> dict[str, Any]:
+        """Metadata of the demonstrative xT / xG models."""
+        from livematch.analytics.models import get_models
+
+        m = get_models()
+        xt = m.xt.to_dict()
+        return {
+            "meta": m.meta,
+            "xg": m.xg.to_dict(),
+            "xt": {k: v for k, v in xt.items() if k != "grid"} | {"grid": xt["grid"]},
+        }
 
     @app.websocket("/ws")
     async def live(ws: WebSocket) -> None:

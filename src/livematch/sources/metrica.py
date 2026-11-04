@@ -212,6 +212,7 @@ def _read_events(path: Path, frame_ids: np.ndarray, flip_periods: list[int]) -> 
                 end_x=coords[1][0],
                 end_y=coords[1][1],
                 end_timestamp=end_t,
+                to_player_id=_player_id(team, row[9]),
             )
         )
     return out

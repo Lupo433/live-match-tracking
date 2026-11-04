@@ -84,3 +84,31 @@ def test_summary_endpoint(client):
     assert st["frame"] == 2999
     assert st["poss"]["home"] + st["poss"]["away"] == pytest.approx(1.0)
     assert len(st["players"]) >= 22
+
+
+def test_report_endpoint_and_cli(client, tmp_path, monkeypatch):
+    r = client.get("/api/matches/sample_game_1/report")
+    assert r.status_code == 200
+    html = r.text
+    assert html.startswith("<!doctype html>") and "</html>" in html
+    assert "Modelli dimostrativi" in html and "<svg" in html
+    assert "http://" not in html.split("<footer>")[0].replace('xmlns="http://www.w3.org', "")
+    # CLI
+    import sys
+
+    from livematch import report
+
+    out = tmp_path / "r.html"
+    monkeypatch.setattr(sys, "argv", ["report", "sample_game_1", "-o", str(out)])
+    report.main()
+    assert out.read_text().count("<svg") >= 5
+
+
+def test_pass_network_and_models_endpoints(client):
+    net = client.get("/api/matches/sample_game_1/passnetwork").json()
+    assert set(net) == {"home", "away"} and net["home"]["nodes"]
+    early = client.get("/api/matches/sample_game_1/passnetwork?until_frame=100").json()
+    assert sum(n["n"] for n in early["home"]["nodes"]) < sum(n["n"] for n in net["home"]["nodes"])
+    m = client.get("/api/models").json()
+    assert m["xg"]["label"] == "modello dimostrativo" and m["xg"]["n_shots"] > 0
+    assert len(m["xt"]["grid"]) == m["xt"]["ny"]

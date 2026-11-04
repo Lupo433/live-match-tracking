@@ -93,6 +93,9 @@ class CheckpointStore:
             if i % 200 == 0:
                 time.sleep(0)  # yield the GIL to the event loop
         self.final_snapshot = engine.snapshot()
+        with self._lock:
+            # full-match state (key = n_frames, never used for seeking): reports reuse it
+            self._checkpoints[len(self.source)] = engine.checkpoint()
         self.done = True
         if key is not None:
             try:
@@ -110,6 +113,11 @@ class CheckpointStore:
                 return None
             k = max(keys)
             return k, self._checkpoints[k]
+
+    def final_state(self) -> Any | None:
+        """Engine state after the whole match (available once ``done``)."""
+        with self._lock:
+            return self._checkpoints.get(len(self.source))
 
     @property
     def progress(self) -> float:
@@ -134,6 +142,17 @@ def player_dict(p: Player) -> dict[str, Any]:
     }
 
 
+def _shot_xg(e: Event) -> float | None:
+    """Demonstrative xG of a shot (None for other events)."""
+    if e.event_type != "SHOT":
+        return None
+    from livematch.analytics.geometry import event_start
+    from livematch.analytics.models import get_models
+
+    p = event_start(e)
+    return None if p is None else round(get_models().xg.predict(*p), 3)
+
+
 def event_dict(e: Event) -> dict[str, Any]:
     return {
         "type": e.event_type,
@@ -149,6 +168,8 @@ def event_dict(e: Event) -> dict[str, Any]:
         "ey": None if e.end_y is None else round(e.end_y, 1),
         "goal": e.is_goal,
         "gf": e.goal_frame,
+        "to": e.to_player_id,
+        "xg": _shot_xg(e),
     }
 
 

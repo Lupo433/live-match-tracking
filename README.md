@@ -112,6 +112,8 @@ src/livematch/
 ├── __main__.py          # python -m livematch [--live-demo]
 ├── cache.py             # cache su disco (.cache/): CSV convertiti e checkpoint
 ├── goals.py             # frame del gol al passaggio della linea
+├── report.py            # report post-partita HTML (python -m livematch.report)
+├── analytics/           # geometry, xt, xg, passes, models(.json): modelli dimostrativi
 ├── live/                # provider.py (fake provider), demo.py (--live-demo)
 ├── sources/
 │   ├── base.py          # DataSource (ABC): info, players, events, frame(i), frames()
@@ -158,6 +160,9 @@ Client → server: `{"cmd":"play"}`, `{"cmd":"pause"}`, `{"cmd":"seek","frame":N
 | `GET /api/matches/{id}` | metadata e roster (per la partita live anche `feed`: pacchetti ricevuti, fuori ordine, persi, riconnessioni) |
 | `GET /api/matches/{id}/events` | eventi (coordinate in metri, casa sempre verso destra) |
 | `GET /api/matches/{id}/summary` | statistiche finali dell'intera partita |
+| `GET /api/matches/{id}/report` | report post-partita HTML autonomo |
+| `GET /api/matches/{id}/passnetwork?until_frame=&min_passes=` | posizioni medie e rete dei passaggi delle due squadre |
+| `GET /api/models` | parametri e metadati dei modelli dimostrativi xT/xG (N, IC 95%) |
 | `GET /api/health` | stato del servizio |
 
 ## Definizione delle metriche
@@ -180,6 +185,19 @@ Coordinate in metri, campo 105 × 68, origine in basso a sinistra; **la squadra 
 | **Pitch control** | Modello a tempo di intercetto (semplificazione di Spearman 2017): per ogni cella di una griglia 32 × 21, tempo di arrivo = 0.7 s di reazione + distanza dalla posizione proiettata (posizione + velocità × 0.7 s) / 5 m/s; probabilità di controllo di casa = logistica della differenza tra il miglior tempo ospite e il miglior tempo casa (σ = 0.45 s). Percentuale = media della griglia, cumulata una volta al secondo di gioco a palla in gioco. |
 | **Velocità palla** | Savitzky-Golay (finestra 5, grado 1) sulla posizione della palla, max 45 m/s. |
 | **Eventi** | Gol (`SHOT` con sottotipo `…GOAL`), tiri e tiri in porta, passaggi, falli commessi (da `FAULT RECEIVED` dell'avversario), cartellini, calci d'angolo: contati quando il replay supera il frame dell'evento. |
+
+## Analytics: xT, xG, rete passaggi, report
+
+> **Modelli dimostrativi.** xT e xG sono stimati sugli eventi di **2 sole partite pubbliche** (Metrica Game 1 e 2):
+> illustrano il metodo e l'integrazione nel sistema live, **non sono modelli predittivi** e non vanno usati per valutare giocatori.
+> Si rigenerano con `python scripts/fit_models.py` (scrive `src/livematch/analytics/models.json`; metadati su `GET /api/models`).
+
+| Metrica | Definizione |
+|---|---|
+| **xT (Expected Threat)** | Griglia 16 × 12 (squadra sempre orientata verso x = 105) stimata per iterazione del valore (Singh 2018): `xT(c) = s(c)·g(c) + m(c)·Σ T(c→c')·xT(c')`, con s = quota di tiri, g = gol/tiri, m = quota di "mosse" (passaggi + conduzioni + palle perse), T = mosse riuscite da c a c' / mosse da c. Fit su 2 576 mosse, 48 tiri, 8 gol (44 iterazioni). **Valore aggiunto** di un passaggio riuscito o di una conduzione = `xT(arrivo) − xT(partenza)`. Le **conduzioni** sono ricavate: il ricevente di un passaggio compie l'azione successiva a ≥ 3 m dal punto di ricezione. xT per giocatore e per squadra si accumula live man mano che il replay supera gli eventi (pannello e colonna `xT` della tabella). |
+| **xG (Expected Goals)** | Regressione logistica su **due sole feature**, distanza dal centro della porta e angolo sotteso dai pali, con penalità L2 (λ = 1 sui coefficienti standardizzati) per limitare l'overfitting. **N = 48 tiri, 8 gol.** Coefficienti: distanza −0.039 /m (IC 95% bootstrap [−0.089, +0.013]), angolo +1.74 /rad (IC 95% [−0.06, +2.99]): **entrambi gli intervalli includono lo zero**, segno che i dati non bastano. Il modello è usato solo per mostrare l'xG cumulato (curva a gradini sopra la timeline, pannello squadra, report). |
+| **Rete dei passaggi** | Nodi = posizione media delle azioni con palla di ogni giocatore (dagli eventi, fino al minuto corrente); archi = passaggi tra due giocatori in entrambe le direzioni (≥ 4 nell'overlay, ≥ 3 nel report). Overlay "Rete passaggi" per la squadra selezionata nella tabella. |
+| **Report post-partita** | `python -m livematch.report <match_id> [-o file.html]` o `GET /api/matches/{id}/report` (pulsante "Report ↗"): un unico file HTML offline con punteggio, statistiche di squadra, xG cumulato, migliori giocatori (distanza, velocità, sprint, xT), heatmap di squadra, reti dei passaggi ed eventi chiave, tutto in SVG. |
 
 ## Feed live simulato e come collegare un feed reale
 
@@ -231,6 +249,8 @@ Metriche, API e frontend restano invariati: dipendono solo da `DataSource`.
 ## Limiti noti
 
 - **Possesso approssimato**: basato sulla sola prossimità alla palla; non distingue un contrasto da un controllo.
+- **xT e xG dimostrativi**: 2 partite, 48 tiri; gli intervalli di confidenza dei coefficienti xG includono lo zero.
+  Mancano feature fondamentali (parte del corpo, assist, pressione, portiere). Vedi la sezione Analytics.
 - **Pitch control semplificato**: niente probabilità di controllo dipendente dal tempo di volo della palla né parametri
   per giocatore; serve come indicatore visivo e di dominio territoriale.
 - **Dati Metrica**: squadre anonime ("Home"/"Away"), palla non tracciata nel ~40% dei frame (palla non in gioco).

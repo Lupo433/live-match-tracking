@@ -146,6 +146,7 @@
 
     if ($("togglePC").checked) drawPitchControl();
     if ($("toggleShape").checked) drawShapes(snap.pos);
+    if ($("toggleNet").checked) drawPassNetwork();
 
     // ball trail
     if ($("toggleTrail").checked && S.trail.length > 1) {
@@ -229,6 +230,37 @@
         ctx.strokeStyle = team === "home" ? COLORS.home : COLORS.away; ctx.lineWidth = 2.5;
         ctx.beginPath(); ctx.moveTo(X(cx) - k, Y(cy) - k); ctx.lineTo(X(cx) + k, Y(cy) + k);
         ctx.moveTo(X(cx) + k, Y(cy) - k); ctx.lineTo(X(cx) - k, Y(cy) + k); ctx.stroke();
+      }
+    }
+  }
+
+  // pass network (from events up to the current frame), refreshed every ~10 s of match
+  let netData = null, netFrame = -1e9, netLoading = false;
+  function drawPassNetwork() {
+    const f = S.curr ? S.curr.f : 0;
+    if (!netLoading && Math.abs(f - netFrame) > 250) {
+      netLoading = true;
+      fetch(`/api/matches/${S.info.match_id}/passnetwork?until_frame=${f}&min_passes=4`).then((r) => r.json())
+        .then((d) => { netData = d; netFrame = f; }).finally(() => { netLoading = false; });
+    }
+    if (!netData) return;
+    const num = {}; S.players.forEach((p) => (num[p.id] = p.num));
+    for (const team of [S.teamTab]) {                 // the team selected in the players tab
+      const net = netData[team], col = team === "home" ? "255,77,109" : "60,203,244";
+      const pos = {}; net.nodes.forEach((nd) => (pos[nd.player] = nd));
+      const mx = Math.max(1, ...net.edges.map((e) => e.count));
+      for (const e of net.edges) {
+        const a = pos[e.a], b = pos[e.b]; if (!a || !b) continue;
+        ctx.strokeStyle = `rgba(${col},0.6)`; ctx.lineWidth = 1 + 5 * e.count / mx;
+        ctx.beginPath(); ctx.moveTo(X(a.x), Y(a.y)); ctx.lineTo(X(b.x), Y(b.y)); ctx.stroke();
+      }
+      const mn = Math.max(1, ...net.nodes.map((nd) => nd.n));
+      for (const nd of net.nodes) {
+        const r = 5 + 9 * Math.sqrt(nd.n / mn);
+        ctx.beginPath(); ctx.arc(X(nd.x), Y(nd.y), r, 0, 7);
+        ctx.fillStyle = `rgba(${col},0.35)`; ctx.fill();
+        ctx.strokeStyle = `rgba(${col},0.9)`; ctx.lineWidth = 1.5; ctx.stroke();
+        ctx.fillStyle = "#fff"; ctx.font = "600 10px Inter, system-ui"; ctx.fillText(num[nd.player] ?? "", X(nd.x), Y(nd.y));
       }
     }
   }
@@ -393,6 +425,8 @@
       const t = st.teams, f1 = (v, d = 1) => (v == null ? "–" : Number(v).toFixed(d));
       const rows = [
         ["Tiri (in porta)", `${t.home.shots} (${t.home.on_target})`, `${t.away.shots} (${t.away.on_target})`],
+        ["xG (dimostrativo)", f1(st.xg ? st.xg.home : null, 2), f1(st.xg ? st.xg.away : null, 2)],
+        ["xT generato", f1(st.xt ? st.xt.home : null, 2), f1(st.xt ? st.xt.away : null, 2)],
         ["Passaggi", t.home.passes, t.away.passes],
         ["Distanza (km)", f1(t.home.dist_km, 2), f1(t.away.dist_km, 2)],
         ["Sprint", t.home.sprints, t.away.sprints],
@@ -411,7 +445,7 @@
 
   function renderTable() {
     const rows = S.stats.players
-      .map((r) => ({ i: r[0], dist: r[1], v: r[2], vmax: r[3], spr: r[4], hi: r[5], on: r[6], p: S.players[r[0]] }))
+      .map((r) => ({ i: r[0], dist: r[1], v: r[2], vmax: r[3], spr: r[4], hi: r[5], on: r[6], xt: r[7] || 0, p: S.players[r[0]] }))
       .filter((r) => r.p.team === S.teamTab);
     const key = S.sortKey;
     rows.sort((a, b) => (key === "num" ? a.p.num - b.p.num : b[key] - a[key]));
@@ -425,6 +459,7 @@
         <td>${(r.vmax * 3.6).toFixed(1)}</td>
         <td>${r.spr}</td>
         <td>${r.hi.toFixed(0)}</td>
+        <td>${r.xt.toFixed(2)}</td>
       </tr>`).join("");
   }
 
@@ -458,7 +493,44 @@
     c.strokeRect(w - 16.5 * w / L - 0.5, hh / 2 - 20.16 * w / L, 16.5 * w / L, 40.32 * w / L);
   }
 
+  // small chart above the timeline: cumulative xG per team (+ excitement curve if available)
+  function drawTimelineCurves() {
+    const cv = $("tlCanvas");
+    const dpr = window.devicePixelRatio || 1;
+    const w = cv.clientWidth, h = cv.clientHeight;
+    if (!w) return;
+    cv.width = w * dpr; cv.height = h * dpr;
+    const c = cv.getContext("2d"); c.scale(dpr, dpr); c.clearRect(0, 0, w, h);
+    const n = Math.max(1, S.info.n_frames - 1);
+    if (S.excitement && S.excitement.length) {
+      const ex = S.excitement, step = S.excitementStep;
+      c.beginPath(); c.moveTo(0, h);
+      ex.forEach((v, k) => c.lineTo((k * step / n) * w, h - (v / 100) * (h - 2)));
+      c.lineTo(((ex.length - 1) * step / n) * w, h); c.closePath();
+      const g = c.createLinearGradient(0, 0, 0, h);
+      g.addColorStop(0, "rgba(182,243,107,0.55)"); g.addColorStop(1, "rgba(182,243,107,0.04)");
+      c.fillStyle = g; c.fill();
+    }
+    let maxXg = 0.5;
+    const series = { home: [], away: [] }, tot = { home: 0, away: 0 };
+    for (const e of S.events) {
+      if (e.type !== "SHOT" || e.xg == null || !e.team) continue;
+      tot[e.team] += e.xg; series[e.team].push([e.f, tot[e.team]]);
+      maxXg = Math.max(maxXg, tot[e.team]);
+    }
+    for (const team of ["home", "away"]) {
+      c.strokeStyle = team === "home" ? COLORS.home : COLORS.away; c.lineWidth = 1.6;
+      c.beginPath(); c.moveTo(0, h - 1); let prev = 0;
+      for (const [f, v] of series[team]) {
+        const x = (f / n) * w;
+        c.lineTo(x, h - 1 - (prev / maxXg) * (h - 4)); c.lineTo(x, h - 1 - (v / maxXg) * (h - 4)); prev = v;
+      }
+      c.lineTo(w, h - 1 - (prev / maxXg) * (h - 4)); c.stroke();
+    }
+  }
+
   function buildTimeline() {
+    drawTimelineCurves();
     const box = $("timelineEvents");
     box.innerHTML = "";
     const n = Math.max(1, S.info.n_frames - 1);
@@ -485,6 +557,9 @@
     sel.innerHTML = m.matches.map((x) => `<option value="${x.match_id}" ${x.match_id === m.match.match_id ? "selected" : ""}>${x.title}</option>`).join("");
     $("speeds").innerHTML = m.speeds.map((v) => `<button data-speed="${v}">${v}×</button>`).join("");
     document.title = `Live · ${m.match.title}`;
+    $("reportLink").href = `/api/matches/${m.match.match_id}/report`;
+    $("reportLink").hidden = !!m.live;
+    netData = null; netFrame = -1e9;
     buildTimeline();
   }
 
@@ -557,7 +632,7 @@
   window.addEventListener("keydown", (e) => {
     if (e.code === "Space" && e.target === document.body) { e.preventDefault(); send({ cmd: S.playing ? "pause" : "play" }); }
   });
-  window.addEventListener("resize", resize);
+  window.addEventListener("resize", () => { resize(); if (S.info) drawTimelineCurves(); });
 
   window.__lmt = { send, state: S };   // small hook for automation (demo/screenshots)
   resize();

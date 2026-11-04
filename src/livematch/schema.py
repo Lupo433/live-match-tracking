@@ -86,6 +86,8 @@ class Event:
     end_x: float | None = None
     end_y: float | None = None
     end_timestamp: float | None = None
+    to_player_id: str | None = None
+    """Receiver of a pass (when known)."""
     goal_frame: int | None = None
     """For goals: frame where the ball crosses the line (falls back to ``frame_id``)."""
 

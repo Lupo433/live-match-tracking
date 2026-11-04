@@ -12,6 +12,8 @@ Model, per frame at 25 Hz:
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import numpy as np
 
 from livematch.goals import annotate_goal_frames
@@ -161,8 +163,19 @@ def generate_synthetic(
                     speed = rng.uniform(12, 20)
                     dur = max(2, int(np.linalg.norm(target - ball) / speed * fps))
                     events.append(
-                        _event(
-                            "PASS", "", team, players[owner], f, ball, target, fps, int(periods[f])
+                        replace(
+                            _event(
+                                "PASS",
+                                "",
+                                team,
+                                players[owner],
+                                f,
+                                ball,
+                                target,
+                                fps,
+                                int(periods[f]),
+                            ),
+                            to_player_id=players[recv].player_id,
                         )
                     )
                     flight = (ball.copy(), target, f, f + dur)

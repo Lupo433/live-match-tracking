@@ -27,7 +27,10 @@ def test_live_source_grows_and_feeds_the_engine(synthetic):
     ref = MetricsEngine.for_source(synthetic)
     for f in synthetic.frames(0, 100):
         ref.update(f)
-    assert engine.snapshot()["players"] == ref.snapshot()["players"]
+    # kinematic columns identical (the live source got no events, so xT differs)
+    assert [r[:7] for r in engine.snapshot()["players"]] == [
+        r[:7] for r in ref.snapshot()["players"]
+    ]
 
 
 def test_live_source_rejects_gaps(synthetic):

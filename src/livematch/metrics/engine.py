@@ -20,6 +20,7 @@ from livematch.metrics.kinematics import (
 from livematch.metrics.pitch_control import PitchControl
 from livematch.metrics.possession import Possession
 from livematch.metrics.shape import ShapeValues, TeamShape
+from livematch.metrics.threat import ThreatTracker
 from livematch.schema import Event, Frame, Player, Team
 from livematch.sources.base import DataSource
 
@@ -56,7 +57,8 @@ class MetricsEngine:
             Team.AWAY: TeamShape(np.flatnonzero((self.teams == 1) & ~gk), attacks_right=False),
         }
         self.ball = PointKinematics(fps, max_speed=MAX_BALL_SPEED)
-        self.events = EventTracker(events or [])
+        self.events = EventTracker(events if events is not None else [])
+        self.threat = ThreatTracker()
         self.on_pitch = np.zeros(n, dtype=bool)
         self.frames_seen = 0
         self.last_frame_id = -1
@@ -81,7 +83,7 @@ class MetricsEngine:
             for shape in self.shapes.values():
                 shape.update(xy)
         self.ball.update(float(frame.ball[0]), float(frame.ball[1]), frame.period)
-        self.events.update(frame.frame_id)
+        self.threat.update(self.events.update(frame.frame_id))
         self.frames_seen += 1
         self.last_frame_id = frame.frame_id
 
@@ -117,7 +119,7 @@ class MetricsEngine:
         return out
 
     def player_rows(self) -> list[list[Any]]:
-        """``[index, dist_m, speed, max_speed, sprints, hi_m, on_pitch]`` per player seen."""
+        """``[index, dist_m, speed, max_speed, sprints, hi_m, on_pitch, xT]`` per player seen."""
         rows = []
         for p in self.players:
             i = p.index
@@ -132,6 +134,7 @@ class MetricsEngine:
                     int(self.sprint.count[i]),
                     round(float(self.hi.distance[i]), 1),
                     bool(self.on_pitch[i]),
+                    round(self.threat.player_xt.get(p.player_id, 0.0), 3),
                 ]
             )
         return rows
@@ -154,6 +157,8 @@ class MetricsEngine:
                 "vmax": round(self.ball.max_speed_reached, 2),
             },
             "own": self.possession.current_player,
+            "xt": {k: round(v, 3) for k, v in self.threat.xt.items()},
+            "xg": {k: round(v, 3) for k, v in self.threat.xg.items()},
             "players": self.player_rows(),
         }
 

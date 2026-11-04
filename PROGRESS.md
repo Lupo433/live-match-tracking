@@ -23,6 +23,17 @@
 - `python -m livematch --live-demo`. 9 test nuovi, incluso un end-to-end su WebSocket vero con disconnessioni ogni secondo.
 - Prestazioni a 10× sul Game 2 dopo le modifiche alla sessione: 40.0 ms medi, p99 46.8 ms, 2 509/2 509 frame, sync 1.0.
 
+### Tappa 3 — Analytics ✅
+- xT (griglia 16×12, iterazione del valore, conduzioni ricavate dagli eventi), xG logistico regolarizzato su distanza e
+  angolo (N = 48 tiri, IC 95% bootstrap riportati: modello dimostrativo), modelli in `analytics/models.json`
+  (`scripts/fit_models.py`).
+- xT/xG accumulati live nel motore (`metrics/threat.py`), nel pannello, nella tabella giocatori e come curve a gradini
+  sopra la timeline.
+- Rete dei passaggi (overlay + endpoint), report post-partita HTML autonomo (endpoint, CLI, pulsante "Report ↗").
+- Prestazioni a 10× sul Game 2: 40.0 ms medi, p99 48.1 ms, 2 498/2 500 frame, sync 1.0.
+- 10 test nuovi (xT con risultato noto su griglia 2×1, conduzioni, xG monotono, rete passaggi, tracker incrementale = batch,
+  report via API e CLI).
+
 ---
 
 ## Sessione 1

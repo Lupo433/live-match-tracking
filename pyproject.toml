@@ -26,7 +26,7 @@ livematch = "livematch.__main__:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-livematch = ["web/*"]
+livematch = ["web/*", "analytics/models.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -40,3 +40,6 @@ src = ["src", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.ruff.lint.per-file-ignores]
+"src/livematch/report.py" = ["E501"]  # long lines inside the HTML/CSS template

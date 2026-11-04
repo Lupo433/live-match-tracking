@@ -46,3 +46,10 @@ Scelte prese in autonomia durante lo sviluppo notturno, con la motivazione.
 39. **Gol live trattenuti** fino al passaggio della linea (max 5 s): il banner arriva quando la palla entra, al prezzo di mostrare il tiro con un piccolo ritardo.
 40. **`--live-demo` collega subito l'adattatore** all'avvio, così la partita live parte dal calcio d'inizio del provider; il provider gioca la partita completa se scaricata, altrimenti il campione.
 41. **Nessun pre-calcolo dei checkpoint per le sorgenti live** (crescono): il seek indietro usa i checkpoint della sessione accumulati durante la visione.
+42. **Destinatario del passaggio nell'evento** (`to_player_id`, colonna `To` di Metrica): serve per conduzioni e reti di passaggi. Campo opzionale, retrocompatibile (`to` nel protocollo).
+43. **xT con "palla persa" come mossa fallita**: nei CSV Metrica i passaggi sbagliati compaiono come `BALL LOST`, mentre `PASS` è sempre riuscito. Le conduzioni non esistono negli eventi e sono ricavate (ricevente che agisce a ≥ 3 m dal punto di ricezione).
+44. **Modelli addestrati offline e versionati** (`analytics/models.json`, 3 KB) invece che a ogni avvio: risultati riproducibili, nessun costo all'avvio, e funziona anche senza i dati completi (es. in Docker). Senza file si usano fallback neutri.
+45. **xG solo con distanza e angolo + L2**: con 48 tiri ogni feature in più sarebbe overfitting. Riportati N, gol e IC 95% bootstrap (500 ricampionamenti) in README, API, report e tooltip.
+46. **xT accumulato con gli eventi del replay** (`ThreatTracker` nel motore, stato di pochi float, incluso nei checkpoint): passaggio accreditato al passatore all'istante del passaggio, conduzione al conduttore all'azione successiva. Un test verifica che la somma incrementale coincida con il calcolo batch.
+47. **Report in HTML con SVG inline**, tema chiaro stampabile, nessuna risorsa esterna. Lo stato finale del motore viene salvato con i checkpoint (chiave = numero di frame), così il report di una partita completa non ricalcola nulla.
+48. **Overlay rete passaggi per una squadra alla volta** (quella della scheda giocatori): con entrambe il campo diventa illeggibile.
