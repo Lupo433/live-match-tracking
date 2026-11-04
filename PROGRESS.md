@@ -1,5 +1,22 @@
 # Stato di avanzamento
 
+## Sessione 2 (notte 4→5 novembre 2026)
+
+### Tappa 1 — Solidità e demo ✅
+- Cache su disco (`.cache/`): CSV convertiti e checkpoint delle metriche, con invalidazione per hash/mtime e recupero da file corrotti.
+  Game 1: primo avvio 10.4 s + 38.7 s di pre-calcolo → secondo avvio **1.2 s + 0.04 s**.
+- Gol temporizzati al passaggio della linea di porta (8/8 rilevati), con fallback al frame del tiro.
+- Campione esteso a 95 s + 25 s per includere il primo gol.
+- `docs/demo.gif` (13 s, 4.2 MB) e 3 screenshot generati con `scripts/make_demo.js` (Playwright + ffmpeg).
+- `Dockerfile`, `.dockerignore`, `docs/deploy.md` (Fly.io, Render). **Build Docker non testata** (Docker Hub ha risposto 429);
+  verificato lo scenario equivalente con `pip install .` non-editable.
+- Prestazioni a 10× sul Game 2 (rimisurate): con pre-calcolo in corso 25 msg/s (40.1 ms medi, p99 99.7 ms), 2 500 frame su
+  2 509 attesi; con checkpoint già in cache 40.0 ms medi, **p99 45.2 ms**, 2 508/2 509; metriche sempre sincronizzate.
+
+---
+
+## Sessione 1
+
 Ultimo aggiornamento: 4 novembre 2026, notte (sessione autonoma).
 
 ## Cosa funziona (verificato)

@@ -30,3 +30,12 @@ Scelte prese in autonomia durante lo sviluppo notturno, con la motivazione.
 26. **Banner del gol solo per gol "vissuti"** (entro 10 s di gioco dal frame mostrato), non quando un seek supera un gol.
 27. **Feed eventi filtrato** su eventi rilevanti (tiri, gol, cartellini, falli, calci piazzati): i ~800 passaggi a partita renderebbero il feed illeggibile; i passaggi sono comunque contati nelle statistiche.
 28. **Partita di default**: Game 1 completo se scaricato, altrimenti il campione, altrimenti la sintetica.
+
+## Seconda sessione
+
+29. **Cache su disco in `.cache/`** (ignorata da git; `LIVEMATCH_CACHE_DIR` per spostarla, `LIVEMATCH_CACHE=0` per disattivarla): i CSV convertiti in `npz` compresso (posizioni in float32, errore < 0.01 mm) e i checkpoint delle metriche in pickle. Chiave = hash di percorso, dimensione e mtime dei CSV + versione del formato: un CSV modificato invalida la cache; un file corrotto viene ignorato, cancellato e ricostruito; scritture atomiche (file temporaneo + rename). Il pickle è accettabile perché legge solo file scritti dall'app nella propria cartella di cache. Risultato sul Game 1: avvio a freddo 10.4 s + 38.7 s di pre-calcolo, a caldo 1.2 s + 0.04 s.
+30. **Dopo un salvataggio la sorgente viene ricaricata dalla cache**, così prima e seconda esecuzione usano dati identici (float32) e i checkpoint restano coerenti.
+31. **Gol al passaggio della linea**: dopo uno SHOT marcato gol si cerca, entro 5 s, il primo frame con la palla oltre la linea di porta (tolleranza 0.5 m) e tra i pali (tolleranza 1 m). Se la palla non è tracciata si usa il frame del tiro. Rilevati 8 gol su 8 nei due match (con tolleranza 0 erano 7 su 8). Il campo `goal_frame` è un'aggiunta retrocompatibile all'evento (`gf` nel protocollo); punteggio, banner e contatore `goals` usano quel frame; il feed mostra "Tiro in porta…" tra il tiro e il gol.
+32. **Campione ridefinito** a 95 s + 25 s (vedi punto 7) per contenere un gol.
+33. **Demo generata con Playwright per Node** (`scripts/make_demo.js`): il Playwright Python non è installato nell'ambiente, quello Node sì; il video webm viene convertito in GIF con ffmpeg (10 fps, 880 px, palette a 96 colori, ~4 MB). Per guidare la pagina lo script usa un piccolo hook `window.__lmt` esposto da `app.js`.
+34. **Docker non testato** (rate limit di Docker Hub): verificato invece lo scenario equivalente con `pip install .` non-editable e variabili d'ambiente. `HOST`/`PORT` letti dall'ambiente per Fly.io e Render.

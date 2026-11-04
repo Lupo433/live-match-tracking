@@ -4,9 +4,13 @@
 I 22 giocatori (pallini con numero di maglia) e la palla si muovono su un campo visto dall'alto, mentre possesso,
 distanze, velocità, sprint, forma di squadra, pitch control e heatmap si aggiornano in tempo reale.
 
-![Screenshot: Metrica Sample Game 1, secondo gol della squadra di casa con pitch control attivo](docs/screenshot.png)
+![Demo: replay a 2×, overlay pitch control, heatmap con un click e gol della squadra di casa](docs/demo.gif)
 
-*Metrica Sample Game 1, 57:29: gol della squadra di casa. Overlay pitch control e forma di squadra attivi, heatmap del #5 a destra.*
+| Pitch control | Heatmap del giocatore | Mobile (390 px) |
+|---|---|---|
+| ![Overlay pitch control](docs/screenshot_pitch_control.png) | ![Heatmap di un giocatore](docs/screenshot_heatmap.png) | ![Vista mobile](docs/screenshot_mobile.png) |
+
+*Metrica Sample Game 1. In alto: 13 s di replay a 2× fino al gol del 2–0 (57:30). Media generata con `scripts/make_demo.js`.*
 
 L'architettura è quella di un sistema live reale: la sorgente dati è un'interfaccia astratta (`DataSource`), e un feed
 in diretta vero si collega scrivendo un solo adattatore, senza toccare replay, metriche, API o frontend.
@@ -54,7 +58,7 @@ python scripts/download_data.py
 python -m livematch
 ```
 
-Poi apri **http://127.0.0.1:8000** nel browser. Il download (≈230 MB) è facoltativo: senza, l'app funziona con il campione
+Poi apri **http://127.0.0.1:8000** nel browser (oppure con Docker: vedi [`docs/deploy.md`](docs/deploy.md)). Il download (≈230 MB) è facoltativo: senza, l'app funziona con il campione
 di 2 minuti incluso (`data/sample/`) e con la partita sintetica. Opzioni: `python -m livematch --host 0.0.0.0 --port 8080`.
 Una partita specifica si apre con `http://127.0.0.1:8000/?match=metrica_game_2`.
 
@@ -199,11 +203,13 @@ Metriche, API e frontend restano invariati.
 - **Possesso approssimato**: basato sulla sola prossimità alla palla; non distingue un contrasto da un controllo.
 - **Pitch control semplificato**: niente probabilità di controllo dipendente dal tempo di volo della palla né parametri
   per giocatore; serve come indicatore visivo e di dominio territoriale.
-- **Dati Metrica**: squadre anonime ("Home"/"Away"), palla non tracciata nel ~40% dei frame (palla non in gioco); i gol nel
-  CSV sono marcati al frame del tiro, quindi il banner compare quando la palla parte, non quando entra in porta.
+- **Dati Metrica**: squadre anonime ("Home"/"Away"), palla non tracciata nel ~40% dei frame (palla non in gioco).
+  I gol nel CSV sono marcati al frame del tiro: il sistema cerca il passaggio della linea di porta nei 5 s successivi
+  (8 gol su 8 rilevati); se la palla non è tracciata, banner e punteggio restano al frame del tiro.
 - **Ritardo delle velocità**: la velocità filtrata si riferisce a 0.2 s prima del frame mostrato.
-- **Prima apertura di una partita completa**: ~3–5 s di caricamento dei CSV e ~35 s di pre-calcolo in background
+- **Prima apertura in assoluto di una partita completa**: ~10 s di conversione dei CSV e ~35 s di pre-calcolo in background
   dei checkpoint (il replay parte subito; solo i seek lontani mostrano per qualche secondo "Sincronizzo statistiche…").
+  Entrambi vengono salvati in `.cache/`: dalla seconda volta l'apertura richiede ~1 s.
 - **Una sessione di replay per connessione**: ogni spettatore ha il proprio replay; nessuna sincronizzazione tra spettatori.
 - Lo stub live non include un client per un provider specifico.
 

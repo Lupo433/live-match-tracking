@@ -537,6 +537,7 @@
   });
   window.addEventListener("resize", resize);
 
+  window.__lmt = { send, state: S };   // small hook for automation (demo/screenshots)
   resize();
   requestAnimationFrame(render);
   const params = new URLSearchParams(location.search);
