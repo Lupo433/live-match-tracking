@@ -224,9 +224,11 @@
         ctx.beginPath(); ctx.moveTo(X(lx), Y(0)); ctx.lineTo(X(lx), Y(W)); ctx.stroke(); ctx.setLineDash([]);
       }
       {
-        ctx.beginPath(); ctx.arc(X(cx), Y(cy), 4, 0, 7);
-        ctx.fillStyle = team === "home" ? COLORS.home : COLORS.away; ctx.fill();
-        ctx.strokeStyle = "#fff"; ctx.lineWidth = 1; ctx.stroke();
+        // centroid: small cross
+        const k = 5;
+        ctx.strokeStyle = team === "home" ? COLORS.home : COLORS.away; ctx.lineWidth = 2.5;
+        ctx.beginPath(); ctx.moveTo(X(cx) - k, Y(cy) - k); ctx.lineTo(X(cx) + k, Y(cy) + k);
+        ctx.moveTo(X(cx) + k, Y(cy) - k); ctx.lineTo(X(cx) - k, Y(cy) + k); ctx.stroke();
       }
     }
   }
@@ -268,7 +270,7 @@
     const frac = m.f / Math.max(1, S.info.n_frames - 1);
     $("progress").style.width = `${frac * 100}%`;
     $("head").style.left = `${frac * 100}%`;
-    $("timeLabel").textContent = fmtClock(m.f / S.info.fps);
+    $("timeLabel").textContent = `${fmtClock(m.f / S.info.fps)} / ${fmtClock(S.info.duration_s)}`;
     document.querySelectorAll("#speeds button").forEach((b) => b.classList.toggle("active", Number(b.dataset.speed) === m.speed));
     const syncing = m.sync < 0.995;
     $("syncBadge").hidden = !syncing;
@@ -289,17 +291,45 @@
       if (e.goal) { if (e.team === "home") h++; else a++; }
       if (KEY_EVENTS.has(e.type) || e.goal) feed.push(e);
     }
-    $("score").textContent = `${h} – ${a}`;
+    const scoreTxt = `${h} – ${a}`;
+    if (S.lastScore !== undefined && h + a > S.lastScore) {
+      const g = feed.filter((e) => e.goal).pop();
+      if (g && f - g.f < 10 * S.info.fps) showGoal(g);         // only "live" goals, not seeks
+    }
+    S.lastScore = h + a;
+    $("score").textContent = scoreTxt;
+    const lastKey = feed.length ? feed[feed.length - 1] : null;
+    if (lastKey === S.lastKeyEvent) return;                      // key-event list unchanged
+    const appended = S.lastKeyEvent && feed.length >= 2 && feed[feed.length - 2] === S.lastKeyEvent;
+    S.lastKeyEvent = lastKey;
     const ul = $("feed");
     ul.innerHTML = "";
-    feed.slice(-25).reverse().forEach((e) => {
+    feed.slice(-25).reverse().forEach((e, k) => {
       const li = document.createElement("li");
-      if (e.goal) li.className = "goal";
+      li.className = `${e.goal ? "goal" : ""} ${appended && k === 0 ? "new" : ""}`;
       const [ic, label] = eventLabel(e);
       const pl = e.player ? e.player.replace(/^[HA]/, "#") : "";
-      li.innerHTML = `<span class="t">${fmtClock(e.t)}</span><span class="ic">${ic}</span><span class="${e.team || ""}">${label}</span><span class="muted">${pl}</span>`;
+      li.innerHTML = `<span class="t">${eventClock(e)}</span><span class="ic">${ic}</span><span class="${e.team || ""}">${label}</span><span class="muted">${pl}</span>`;
       ul.appendChild(li);
     });
+  }
+
+  // broadcast-style clock of an event (second half starts at 45:00)
+  function eventClock(e) {
+    const offs = { 1: 0, 2: 45 * 60, 3: 90 * 60, 4: 105 * 60 };
+    const start = S.info.period_starts[String(e.period)];
+    if (start === undefined) return fmtClock(e.t);
+    return fmtClock(offs[e.period] + Math.max(0, (e.f - start) / S.info.fps));
+  }
+
+  function showGoal(e) {
+    if (!e) return;
+    const el = $("goalBanner");
+    el.className = `goal-banner show ${e.team}`;
+    el.querySelector("b").textContent = `GOL ${e.team === "home" ? S.info.home_name : S.info.away_name}`;
+    el.querySelector("span").textContent = e.player ? `#${e.player.slice(1)} · ${eventClock(e)}` : eventClock(e);
+    clearTimeout(showGoal._t);
+    showGoal._t = setTimeout(() => (el.className = "goal-banner"), 3500);
   }
 
   function eventLabel(e) {
@@ -411,14 +441,14 @@
       const d = document.createElement("div");
       d.className = `tl-ev ${e.team || ""} ${e.goal ? "goal" : ""}`;
       d.style.left = `${(e.f / n) * 100}%`;
-      d.title = `${fmtClock(e.t)} ${e.goal ? "GOL" : e.type} ${e.team || ""} ${e.player || ""}`;
+      d.title = `${eventClock(e)} ${e.goal ? "GOL" : e.type} ${e.team || ""} ${e.player || ""}`;
       box.appendChild(d);
     }
   }
 
   function onInit(m) {
     S.info = m.match; S.players = m.players; S.events = m.events; S.matches = m.matches;
-    S.prev = S.curr = null; S.trail = []; S.stats = null; S.selected = null; S.lastFeedIdx = -2;
+    S.prev = S.curr = null; S.trail = []; S.stats = null; S.selected = null; S.lastFeedIdx = -2; S.lastScore = undefined; S.lastKeyEvent = undefined;
     $("loading").hidden = true;
     $("heatCard").hidden = true;
     $("homeName").textContent = m.match.home_name;

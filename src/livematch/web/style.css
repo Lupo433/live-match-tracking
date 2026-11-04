@@ -82,7 +82,7 @@ select {
 .tl-ev.goal.home { color: var(--home); }
 .tl-ev.goal.away { color: var(--away); }
 .tl-ev.goal::after { content: "⚽"; position: absolute; top: -16px; left: -3px; font-size: 12px; }
-.time-label { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 13px; min-width: 48px; text-align: right; }
+.time-label { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 12px; min-width: 48px; white-space: nowrap; text-align: right; }
 
 .below { display: grid; grid-template-columns: 1.1fr 1fr; gap: 12px; }
 .legend { font-size: 11px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
@@ -128,7 +128,8 @@ table.players tr.off td { opacity: .45; }
 #heatmap { width: 100%; display: block; border-radius: 8px; }
 .link { background: none; border: none; color: var(--muted); cursor: pointer; }
 .feed { list-style: none; margin: 0; padding: 0; max-height: 236px; overflow-y: auto; font-size: 12.5px; }
-.feed li { display: flex; gap: 8px; padding: 5px 0; border-bottom: 1px solid rgba(31,42,61,.5); animation: fadein .4s ease; }
+.feed li { display: flex; gap: 8px; padding: 5px 0; border-bottom: 1px solid rgba(31,42,61,.5); }
+.feed li.new { animation: fadein .4s ease; }
 .feed .t { color: var(--muted); font-variant-numeric: tabular-nums; min-width: 40px; }
 .feed .home { color: var(--home); }
 .feed .away { color: var(--away); }
@@ -150,3 +151,15 @@ table.players tr.off td { opacity: .45; }
   .controls { flex-wrap: wrap; }
   .timeline { flex-basis: 100%; order: 3; }
 }
+
+.goal-banner {
+  position: absolute; left: 50%; top: 42%; transform: translate(-50%, -50%) scale(.8);
+  opacity: 0; pointer-events: none; transition: all .35s cubic-bezier(.2,1.4,.4,1);
+  background: rgba(11,15,23,.88); border: 2px solid var(--accent); border-radius: 18px;
+  padding: 14px 34px; text-align: center; box-shadow: 0 0 60px rgba(182,243,107,.35);
+}
+.goal-banner.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+.goal-banner.home { border-color: var(--home); box-shadow: 0 0 60px rgba(255,77,109,.45); }
+.goal-banner.away { border-color: var(--away); box-shadow: 0 0 60px rgba(60,203,244,.45); }
+.goal-banner b { display: block; font-size: 30px; letter-spacing: .12em; }
+.goal-banner span { color: var(--muted); font-size: 13px; }
