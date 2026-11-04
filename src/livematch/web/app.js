@@ -328,7 +328,11 @@
     $("syncBadge").hidden = !syncing;
     if (syncing) $("syncPct").textContent = `${Math.round(m.sync * 100)}%`;
     updateScoreAndFeed(m.f);
-    if (m.st) { S.stats = m.st; renderStats(); }
+    if (m.st) {
+      S.stats = m.st; renderStats();
+      if (m.live && m.st.exc && m.st.exc[0] >= 0) S.excitement[m.st.exc[0]] = m.st.exc[1];
+      drawMarketing();
+    }
   }
 
   function updateScoreAndFeed(f) {
@@ -529,6 +533,61 @@
     }
   }
 
+  // ------------------------------------------------------------------ marketing (synthetic data)
+  function loadMarketing(matchId) {
+    S.mk = null;
+    fetch(`/api/matches/${matchId}/marketing`).then((r) => (r.ok ? r.json() : null)).then((d) => {
+      if (!d || !S.info || S.info.match_id !== matchId) return;
+      S.mk = d;
+      S.excitement = d.excitement; S.excitementStep = d.fps;
+      $("mkCard").hidden = false;
+      $("mkMetric").textContent = d.metric;
+      $("mkCorr").textContent = d.correlation ? `correlazione max r = ${d.correlation.r.toFixed(2)} con ritardo ${d.correlation.lag_s} s` : "";
+      drawTimelineCurves();
+      drawMarketing();
+    }).catch(() => {});
+  }
+
+  function drawMarketing() {
+    const d = S.mk; if (!d || !S.curr) return;
+    const cv = $("mkChart"), dpr = window.devicePixelRatio || 1;
+    const w = cv.clientWidth, h = cv.clientHeight; if (!w) return;
+    cv.width = w * dpr; cv.height = h * dpr;
+    const c = cv.getContext("2d"); c.scale(dpr, dpr);
+    const tNow = S.curr.f / d.fps, tMax = (S.info.n_frames - 1) / d.fps;
+    const X2 = (t) => 30 + (w - 40) * t / tMax, top = 8, bottom = h - 18;
+    c.strokeStyle = "rgba(255,255,255,0.08)"; c.lineWidth = 1;
+    for (const v of [0, 50, 100]) { const y = bottom - (bottom - top) * v / 100; c.beginPath(); c.moveTo(30, y); c.lineTo(w - 10, y); c.stroke(); c.fillStyle = "#8a96ad"; c.font = "10px Inter, system-ui"; c.fillText(String(v), 4, y + 3); }
+    const drawSeries = (pts, color, fill) => {
+      for (const [past, alpha] of [[true, 1], [false, 0.18]]) {
+        const sel = pts.filter(([t]) => (past ? t <= tNow : t >= tNow - 1));
+        if (sel.length < 2) continue;
+        c.globalAlpha = alpha; c.beginPath();
+        sel.forEach(([t, y], k) => (k ? c.lineTo(X2(t), y) : c.moveTo(X2(t), y)));
+        if (fill) { c.lineTo(X2(sel[sel.length - 1][0]), bottom); c.lineTo(X2(sel[0][0]), bottom); c.closePath(); c.fillStyle = color; c.fill(); }
+        else { c.strokeStyle = color; c.lineWidth = 1.8; c.stroke(); }
+        c.globalAlpha = 1;
+      }
+    };
+    // excitement, 10 s means
+    const ex = [];
+    for (let k = 0; k < d.excitement.length; k += 10) {
+      const seg = d.excitement.slice(k, k + 10); ex.push([k, bottom - (bottom - top) * (seg.reduce((a, b) => a + b, 0) / seg.length) / 100]);
+    }
+    drawSeries(ex, "rgba(182,243,107,0.45)", true);
+    const ev = d.engagement, mx = Math.max(...ev.v) * 1.05, mn = Math.min(...ev.v) * 0.9;
+    drawSeries(ev.t.map((t, k) => [t, bottom - (bottom - top) * (ev.v[k] - mn) / (mx - mn)]), "#fbbf24", false);
+    c.strokeStyle = "#fff"; c.lineWidth = 1.5; c.beginPath(); c.moveTo(X2(tNow), top); c.lineTo(X2(tNow), bottom); c.stroke();
+    // goals
+    for (const m of d.moments) if (m.label.startsWith("Gol")) { c.fillStyle = m.team === "home" ? COLORS.home : COLORS.away; c.beginPath(); c.arc(X2(m.t), bottom + 8, 4, 0, 7); c.fill(); }
+    const past = d.moments.filter((m) => m.t <= tNow).slice(0, 8);
+    const key = past.map((m) => m.frame).join(",");
+    if (key !== S.mkKey) {
+      S.mkKey = key;
+      $("mkMoments").innerHTML = past.length ? past.map((m) => `<li data-f="${m.frame}"><span class="${m.team}">${m.label}</span> · ${eventClock({ f: m.frame, period: m.frame >= (S.info.period_starts["2"] ?? 1e12) ? 2 : 1, t: m.t })} · <span class="lift">${m.lift >= 0 ? "+" : ""}${Math.round(m.lift * 100)}%</span></li>`).join("") : '<li class="muted">Nessun tiro o gol ancora</li>';
+    }
+  }
+
   function buildTimeline() {
     drawTimelineCurves();
     const box = $("timelineEvents");
@@ -560,6 +619,9 @@
     $("reportLink").href = `/api/matches/${m.match.match_id}/report`;
     $("reportLink").hidden = !!m.live;
     netData = null; netFrame = -1e9;
+    S.excitement = []; S.excitementStep = m.match.fps; S.mkKey = null;
+    $("mkCard").hidden = true;
+    if (!m.live) loadMarketing(m.match.match_id);
     buildTimeline();
   }
 
@@ -588,6 +650,10 @@
   // ------------------------------------------------------------------ inputs
   $("playBtn").onclick = () => send({ cmd: S.playing ? "pause" : "play" });
   $("goLive").onclick = () => send({ cmd: "go_live" });
+  $("mkMoments").onclick = (e) => {
+    const li = e.target.closest("li[data-f]");
+    if (li) send({ cmd: "seek", frame: Math.max(0, Number(li.dataset.f) - 8 * S.info.fps) });
+  };
   $("speeds").onclick = (e) => { const b = e.target.closest("button"); if (b) send({ cmd: "set_speed", speed: Number(b.dataset.speed) }); };
   $("timeline").onclick = (e) => {
     const r = $("timeline").getBoundingClientRect();

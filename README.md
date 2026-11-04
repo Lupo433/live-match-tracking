@@ -114,6 +114,7 @@ src/livematch/
 ├── goals.py             # frame del gol al passaggio della linea
 ├── report.py            # report post-partita HTML (python -m livematch.report)
 ├── analytics/           # geometry, xt, xg, passes, models(.json): modelli dimostrativi
+├── engagement/          # schema, align, analysis (event study), synthetic, marketing
 ├── live/                # provider.py (fake provider), demo.py (--live-demo)
 ├── sources/
 │   ├── base.py          # DataSource (ABC): info, players, events, frame(i), frames()
@@ -125,6 +126,8 @@ src/livematch/
 │   ├── engine.py        # compone tutte le metriche, snapshot JSON, checkpoint/restore
 │   ├── kinematics.py    # distanza, velocità Savitzky-Golay, sprint, alta intensità
 │   ├── heatmap.py  possession.py  shape.py  pitch_control.py  events.py
+│   ├── threat.py        # xT / xG live
+│   └── excitement.py    # excitement index per secondo
 └── web/                 # una pagina statica: HTML + JS vanilla + canvas, nessun build step
 ```
 
@@ -162,6 +165,7 @@ Client → server: `{"cmd":"play"}`, `{"cmd":"pause"}`, `{"cmd":"seek","frame":N
 | `GET /api/matches/{id}/summary` | statistiche finali dell'intera partita |
 | `GET /api/matches/{id}/report` | report post-partita HTML autonomo |
 | `GET /api/matches/{id}/passnetwork?until_frame=&min_passes=` | posizioni medie e rete dei passaggi delle due squadre |
+| `GET /api/matches/{id}/marketing` | excitement index per secondo, engagement **sintetico**, momenti chiave per lift, correlazione |
 | `GET /api/models` | parametri e metadati dei modelli dimostrativi xT/xG (N, IC 95%) |
 | `GET /api/health` | stato del servizio |
 
@@ -198,6 +202,36 @@ Coordinate in metri, campo 105 × 68, origine in basso a sinistra; **la squadra 
 | **xG (Expected Goals)** | Regressione logistica su **due sole feature**, distanza dal centro della porta e angolo sotteso dai pali, con penalità L2 (λ = 1 sui coefficienti standardizzati) per limitare l'overfitting. **N = 48 tiri, 8 gol.** Coefficienti: distanza −0.039 /m (IC 95% bootstrap [−0.089, +0.013]), angolo +1.74 /rad (IC 95% [−0.06, +2.99]): **entrambi gli intervalli includono lo zero**, segno che i dati non bastano. Il modello è usato solo per mostrare l'xG cumulato (curva a gradini sopra la timeline, pannello squadra, report). |
 | **Rete dei passaggi** | Nodi = posizione media delle azioni con palla di ogni giocatore (dagli eventi, fino al minuto corrente); archi = passaggi tra due giocatori in entrambe le direzioni (≥ 4 nell'overlay, ≥ 3 nel report). Overlay "Rete passaggi" per la squadra selezionata nella tabella. |
 | **Report post-partita** | `python -m livematch.report <match_id> [-o file.html]` o `GET /api/matches/{id}/report` (pulsante "Report ↗"): un unico file HTML offline con punteggio, statistiche di squadra, xG cumulato, migliori giocatori (distanza, velocità, sprint, xT), heatmap di squadra, reti dei passaggi ed eventi chiave, tutto in SVG. |
+
+## Angolo marketing: excitement index ed engagement
+
+> ⚠️ **DATI SINTETICI DIMOSTRATIVI.** Le serie di engagement nel progetto sono **generate da uno script con seed fisso**
+> (`scripts/make_synthetic_engagement.py`, `livematch/engagement/synthetic.py`) e sono dichiarate come tali in codice, API,
+> interfaccia e CSV. Nessun dato reale di alcuna azienda è presente nel repository.
+
+- **Excitement index** (0–100 per secondo, calcolato live dal tracking): vicinanza della palla alla porta, ritmo,
+  tiri/xG recenti con decadimento, cambi di possesso, dominio territoriale dal pitch control. Formula, pesi e
+  normalizzazione in [`docs/excitement_index.md`](docs/excitement_index.md). È la traccia verde sopra la timeline.
+- **Modulo `livematch/engagement/`**: schema generico in formato lungo (`timestamp, metric, value`), allineamento al
+  tempo di partita con calci d'inizio dei due tempi e **offset configurabile** (ritardo di trasmissione/streaming),
+  **event study** (engagement medio nei minuti dopo un gol/tiro rispetto alla baseline dei minuti precedenti → *lift*),
+  profilo medio attorno agli eventi e **correlazione con ritardo** tra excitement index ed engagement.
+- **Scheda "Marketing"** nell'app (sotto il campo, con etichetta **DATI SINTETICI DIMOSTRATIVI**): excitement index e
+  curva di engagement sintetica fino al minuto corrente, momenti chiave ordinati per lift (cliccabili per rivederli),
+  correlazione massima e relativo ritardo. Endpoint: `GET /api/matches/{id}/marketing`.
+
+Esempio sul Game 1 (dati sintetici): lift del 1° gol +369%, del 2° +260%; correlazione massima excitement/engagement
+r = 0.37 con 20 s di ritardo. Questi numeri descrivono il generatore sintetico, non un pubblico reale.
+
+### Come collegare serie reali di engagement
+
+1. Esportare le serie in formato lungo: una riga per `timestamp` (con fuso orario), `metric`, `value`
+   (es. post al minuto, utenti attivi nell'app). `livematch.engagement.schema.read_csv` valida il formato.
+2. Indicare l'orario reale dei calci d'inizio dei due tempi e il ritardo medio del segnale (`KickoffTimes(wall=…,
+   data_start=…, period_end=…, offset_s=…)`): `align(df, kickoff, metric, step_s=10)` restituisce la serie sul tempo di
+   partita, pronta per `event_study` e `lagged_correlation`.
+3. Sostituire in `engagement/marketing.py` la chiamata al generatore sintetico con il caricamento della serie reale.
+   I dati reali vanno tenuti **fuori dal repository** (es. cartella ignorata da git o storage aziendale).
 
 ## Feed live simulato e come collegare un feed reale
 

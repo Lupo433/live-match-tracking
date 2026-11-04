@@ -34,6 +34,15 @@
 - 10 test nuovi (xT con risultato noto su griglia 2×1, conduzioni, xG monotono, rete passaggi, tracker incrementale = batch,
   report via API e CLI).
 
+### Tappa 4 — Angolo marketing ✅
+- Excitement index per secondo (5 componenti documentate in `docs/excitement_index.md`), incrementale nel motore,
+  traccia sulla timeline e valore live (`st.exc`).
+- `livematch/engagement/`: schema lungo, allineamento con offset, event study (lift), profilo medio, correlazione con ritardo;
+  generatore SINTETICO con seed fisso + `scripts/make_synthetic_engagement.py` (CSV d'esempio del campione).
+- Scheda "Marketing" con etichetta DATI SINTETICI DIMOSTRATIVI, endpoint `/api/matches/{id}/marketing`.
+- Prestazioni a 10× sul Game 2: durante il pre-calcolo 40.0 ms medi, p99 80.2 ms, 2 495/2 500 frame; a cache calda 40.0 ms, p99 44.4 ms, 2 508/2 509; sync sempre 1.0. Motore ~305 µs/frame.
+- 10 test nuovi (situazioni sintetiche gol vs palleggio, decadimento, allineamento, lift noto, ritardo noto, determinismo).
+
 ---
 
 ## Sessione 1

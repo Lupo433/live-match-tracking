@@ -9,6 +9,7 @@ from typing import Any
 import numpy as np
 
 from livematch.metrics.events import EventTracker
+from livematch.metrics.excitement import ExcitementTracker
 from livematch.metrics.heatmap import Heatmaps
 from livematch.metrics.kinematics import (
     HI_SPEED,
@@ -59,6 +60,8 @@ class MetricsEngine:
         self.ball = PointKinematics(fps, max_speed=MAX_BALL_SPEED)
         self.events = EventTracker(events if events is not None else [])
         self.threat = ThreatTracker()
+        self.excitement = ExcitementTracker(fps)
+        self._outfield = np.array([not p.is_goalkeeper for p in players])
         self.on_pitch = np.zeros(n, dtype=bool)
         self.frames_seen = 0
         self.last_frame_id = -1
@@ -83,7 +86,23 @@ class MetricsEngine:
             for shape in self.shapes.values():
                 shape.update(xy)
         self.ball.update(float(frame.ball[0]), float(frame.ball[1]), frame.period)
-        self.threat.update(self.events.update(frame.frame_id))
+        new_events = self.events.update(frame.frame_id)
+        self.threat.update(new_events)
+        for e in new_events:
+            if e.event_type == "SHOT":
+                self.excitement.add_shot(e.timestamp, self.threat.xg_of(e), e.is_goal)
+        if self.pitch_control.sampled_this_frame:
+            pc = self.pitch_control
+            self.excitement.set_territory(pc.grid, pc.nx, pc.ny)
+        moving = self.on_pitch & self._outfield
+        mean_speed = float(self.kin.speed[moving].mean()) if moving.any() else 0.0
+        self.excitement.update(
+            frame.timestamp,
+            frame.ball,
+            self.ball.speed,
+            mean_speed,
+            self.possession.current_team if in_play else None,
+        )
         self.frames_seen += 1
         self.last_frame_id = frame.frame_id
 
@@ -158,6 +177,7 @@ class MetricsEngine:
             },
             "own": self.possession.current_player,
             "xt": {k: round(v, 3) for k, v in self.threat.xt.items()},
+            "exc": [len(self.excitement.series) - 1, self.excitement.current],
             "xg": {k: round(v, 3) for k, v in self.threat.xg.items()},
             "players": self.player_rows(),
         }

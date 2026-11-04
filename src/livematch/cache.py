@@ -30,7 +30,7 @@ from livematch.schema import Event, MatchInfo, Player, Team
 log = logging.getLogger("livematch.cache")
 
 SOURCE_CACHE_VERSION = "3"
-CHECKPOINT_CACHE_VERSION = "2"  # bump when the metrics engine state changes
+CHECKPOINT_CACHE_VERSION = "3"  # bump when the metrics engine state changes
 
 
 def cache_enabled() -> bool:

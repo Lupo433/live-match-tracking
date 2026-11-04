@@ -175,3 +175,21 @@ table.players tr.off td { opacity: .45; }
 .tl-canvas { position: absolute; left: 0; right: 0; top: 0; width: 100%; height: 30px; pointer-events: none; }
 .top-actions { display: flex; gap: 8px; align-items: center; }
 .btn.small { font-size: 12px; padding: 6px 10px; text-decoration: none; color: var(--text); }
+
+/* ---------- marketing */
+.marketing { display: flex; flex-direction: column; gap: 8px; }
+.synthetic-badge { font-size: 10px; font-weight: 800; letter-spacing: .08em; color: #0b0f17; background: #fbbf24;
+  padding: 4px 8px; border-radius: 6px; white-space: nowrap; }
+#mkChart { width: 100%; height: 170px; display: block; }
+.mk-legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; color: var(--muted); }
+.mk-legend i { display: inline-block; width: 12px; height: 4px; border-radius: 2px; margin-right: 6px; vertical-align: middle; }
+.mk-legend i.exc { background: var(--accent); }
+.mk-legend i.eng { background: #fbbf24; }
+.mk-moments ol { margin: 0; padding-left: 18px; font-size: 12.5px; columns: 2; column-gap: 24px; }
+.mk-moments li { padding: 3px 0; cursor: pointer; break-inside: avoid; }
+.mk-moments li:hover { color: var(--accent); }
+.mk-moments .lift { font-weight: 700; color: #fbbf24; font-variant-numeric: tabular-nums; }
+.muted { color: var(--muted); }
+@media (max-width: 600px) { .mk-moments ol { columns: 1; } }
+.mk-moments .home { color: var(--home); }
+.mk-moments .away { color: var(--away); }

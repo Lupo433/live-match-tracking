@@ -33,6 +33,7 @@ class PitchControl:
         self._xy: np.ndarray | None = None
         self._vel: np.ndarray | None = None
         self._frame = 0
+        self.sampled_this_frame = False
         self._sum_home = 0.0
         self._samples = 0
 
@@ -57,8 +58,10 @@ class PitchControl:
     def update(self, xy: np.ndarray, vel: np.ndarray, ball_in_play: bool) -> None:
         self._xy, self._vel, self._grid = xy, vel, None
         self._frame += 1
+        self.sampled_this_frame = False
         if self._frame % self.every or not ball_in_play:
             return
+        self.sampled_this_frame = True
         self._grid = self.compute(xy, vel)
         self._sum_home += float(self._grid.mean())
         self._samples += 1

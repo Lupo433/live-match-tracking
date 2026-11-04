@@ -112,3 +112,13 @@ def test_pass_network_and_models_endpoints(client):
     m = client.get("/api/models").json()
     assert m["xg"]["label"] == "modello dimostrativo" and m["xg"]["n_shots"] > 0
     assert len(m["xt"]["grid"]) == m["xt"]["ny"]
+
+
+def test_marketing_endpoint_is_synthetic_and_consistent(client):
+    r = client.get("/api/matches/sample_game_1/marketing").json()
+    assert r["synthetic"] is True and "SINTETICI" in r["notice"]
+    assert len(r["excitement"]) == 3000 // 25
+    assert all(0 <= v <= 100 for v in r["excitement"])
+    goal = [m for m in r["moments"] if m["label"].startswith("Gol")]
+    assert goal and goal[0]["lift"] > 0
+    assert len(r["engagement"]["t"]) == len(r["engagement"]["v"]) > 5

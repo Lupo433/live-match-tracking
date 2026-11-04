@@ -67,6 +67,23 @@
           <ul class="feed" id="feed"></ul>
         </div>
       </div>
+
+      <div class="card marketing" id="mkCard" hidden>
+        <div class="card-head">
+          <h3>Marketing · Excitement index vs engagement</h3>
+          <span class="synthetic-badge" title="Serie di engagement generate da script con seed fisso: nessun dato reale">DATI SINTETICI DIMOSTRATIVI</span>
+        </div>
+        <canvas id="mkChart"></canvas>
+        <div class="mk-legend">
+          <span><i class="exc"></i>Excitement index (0–100, calcolato dal tracking)</span>
+          <span><i class="eng"></i><b id="mkMetric">engagement</b> — sintetico</span>
+          <span id="mkCorr" class="muted"></span>
+        </div>
+        <div class="mk-moments">
+          <h3>Momenti chiave per lift di engagement (fin qui)</h3>
+          <ol id="mkMoments"></ol>
+        </div>
+      </div>
     </section>
 
     <aside class="panel" id="panel">

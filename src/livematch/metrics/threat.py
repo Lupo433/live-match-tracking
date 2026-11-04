@@ -54,6 +54,11 @@ class ThreatTracker:
             elif e.event_type == "SHOT" and start is not None:
                 self.xg[team] += models.xg.predict(*start)
 
+    @staticmethod
+    def xg_of(e: Event) -> float:
+        start = event_start(e)
+        return get_models().xg.predict(*start) if start is not None else 0.0
+
     def _credit(self, team: str, pid: str | None, value: float) -> None:
         self.xt[team] += value
         if pid is not None:

@@ -148,6 +148,30 @@ def create_app(
         src = _get_source(match_id)
         return {t.value: pass_network(src.events, t, until_frame) for t in (Team.HOME, Team.AWAY)}
 
+    marketing_cache: dict[str, dict[str, Any]] = {}
+
+    @app.get("/api/matches/{match_id}/marketing")
+    def match_marketing(match_id: str) -> dict[str, Any]:
+        """Excitement index per second + SYNTHETIC engagement, event study, correlation."""
+        from livematch.engagement.marketing import marketing_payload
+
+        src = _get_source(match_id)
+        if src.info.source == "live":
+            raise HTTPException(409, "marketing view needs a complete match")
+        if match_id not in marketing_cache:
+            store = _store(match_id)
+            state = None
+            if store is not None:
+                deadline = time.monotonic() + 180
+                while not store.done and time.monotonic() < deadline:
+                    time.sleep(0.2)
+                state = store.final_state()
+            from livematch.report import compute_final_engine
+
+            engine = compute_final_engine(src, state)
+            marketing_cache[match_id] = marketing_payload(src, engine.excitement.series)
+        return marketing_cache[match_id]
+
     @app.get("/api/models")
     def models_info() -> dict[str, Any]:
         """Metadata of the demonstrative xT / xG models."""
